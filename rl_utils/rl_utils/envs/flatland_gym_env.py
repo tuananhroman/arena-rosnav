@@ -93,7 +93,7 @@ class FlatlandEnv(gym.Env):
 
         # reward calculator
         if safe_dist is None:
-            safe_dist = self.model_space_encoder._radius + 0.1
+            safe_dist = self.model_space_encoder._radius + 0.25
 
         self.reward_calculator = RewardCalculator(
             holonomic=self.model_space_encoder._is_holonomic,
@@ -150,7 +150,7 @@ class FlatlandEnv(gym.Env):
 
         self.last_mean_reward = 0
         self.mean_reward = [0, 0]
-
+        self.total_step_count = 0
         self.step_time = [0, 0]
 
         self._done_reasons = {
@@ -194,11 +194,8 @@ class FlatlandEnv(gym.Env):
 
         # calculate reward
         reward, reward_info = self.reward_calculator.get_reward(
-            laser_scan=obs_dict["laser_scan"],
-            goal_in_robot_frame=obs_dict["goal_in_robot_frame"],
             action=decoded_action,
-            global_plan=obs_dict["global_plan"],
-            robot_pose=obs_dict["robot_pose"],
+            **obs_dict,
         )
         done = reward_info["is_done"]
 
@@ -228,6 +225,7 @@ class FlatlandEnv(gym.Env):
         self.step_time[1] += 1
         self.mean_reward[1] += 1
         self.mean_reward[0] += reward
+        self.total_step_count += 1
 
         if done:
             # print(self.ns_prefix, "DONE", info["done_reason"], sum(self._done_hist), min(obs_dict["laser_scan"]))
@@ -237,22 +235,24 @@ class FlatlandEnv(gym.Env):
             # if self._steps_curr_episode <= 1:
             #     print(self.ns_prefix, "DONE", info, min(obs_dict["laser_scan"]), obs_dict["goal_in_robot_frame"])
 
-            if sum(self._done_hist) >= 5:
+            if sum(self._done_hist) >= 10:
                 mean_reward = self.mean_reward[0] / self.mean_reward[1]
                 diff = round(mean_reward - self.last_mean_reward, 5)
 
                 print(
-                    f"[{self.ns}] Last 5 Episodes:\t"
+                    f"[{self.ns}] Last 10 Episodes:\t"
                     f"{self._done_reasons[str(0)]}: {self._done_hist[0]}\t"
                     f"{self._done_reasons[str(1)]}: {self._done_hist[1]}\t"
                     f"{self._done_reasons[str(2)]}: {self._done_hist[2]}\t"
                     f"Mean step time: {round(self.step_time[0] / self.step_time[1] * 100, 2)}\t"
-                    f"Mean reward: {round(mean_reward, 5)} ({'+' if diff >= 0 else ''}{diff})"
+                    f"Mean reward: {round(mean_reward, 5)} ({'+' if diff >= 0 else ''}{diff})\t"
+                    f"Mean steps: {self.total_step_count/10}\t"
                 )
                 self._done_hist = [0] * 3
                 self.step_time = [0, 0]
                 self.last_mean_reward = mean_reward
                 self.mean_reward = [0, 0]
+                self.total_step_count = 0
             self._done_hist[int(info["done_reason"])] += 1
 
         self.step_time[0] += time.time() - start_time
