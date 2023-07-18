@@ -10,12 +10,30 @@ from tools.argsparser import parse_training_args
 from tools.env_utils import init_envs
 from tools.general import *
 from tools.model_utils import get_ppo_instance, init_callbacks
-
+from tools.ros_param_distributor import *
 
 """
-1. Deploy LSTM and FrameStacking Agents
+1. X Deploy LSTM and FrameStacking Agents
 2. Barn Maps testing
 3. Metrics for LSTM and FrameStacking Agents
+4. X Collision detection form behind
+5. X More Maps on Barn like Specs (smaller res, smaller maps)
+6. Reward Shaping
+7. LSTM testing
+8. X Reduce observation space
+9. X Discrete Action Space
+10. X Update Observation Space on loading RPPO
+11. ---> Log training episode metrics
+12. See approaches of other teams
+13. ---> Check if Env are paused when Map Generator is running a new map
+"""
+"""
+TODO:
+- X deploy reduced laser encoder
+- X test full map
+- X finish: Discrete Action Space (also deployment)
+- Check saving VecNorm on StackedObs
+6. Reward Shaping
 """
 
 
@@ -47,8 +65,6 @@ def main():
 
     # check if simulations are booted
     wait_for_nodes(with_ns=ns_for_nodes, n_envs=config["n_envs"], timeout=5)
-
-    set_space_encoder(config)
 
     # initialize hyperparameters (save to/ load from json)
     config = initialize_config(

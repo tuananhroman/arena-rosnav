@@ -31,7 +31,7 @@ class RobotManager:
         self.start_pos = [0, 0]
         self.goal_pos = [0, 0]
 
-        self.goal_radius = rospy.get_param("goal_radius", 0.7) + 1
+        self.goal_radius = rospy.get_param("goal_radius", 0.7)
         self.is_goal_reached = False
 
         self.robot_setup = robot_setup
@@ -107,7 +107,14 @@ class RobotManager:
         self.publish_goal(self.goal_pos)
 
         if move_robot:
-            self.move_robot_to_start()
+            try:
+                self.move_robot_to_start()
+            except:
+                self.reset(
+                    forbidden_zones=forbidden_zones,
+                    start_pos=start_pos,
+                    goal_pos=goal_pos,
+                )
 
         self.set_is_goal_reached(self.start_pos, self.goal_pos)
 

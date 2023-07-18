@@ -58,6 +58,7 @@ class ObservationCollector:
 
         self._clock = Clock()
         self._scan = LaserScan()
+        self._full_scan = LaserScan()
         self._robot_pose = Pose2D()
         self._robot_vel = Twist()
         self._subgoal = Pose2D()
@@ -65,6 +66,9 @@ class ObservationCollector:
 
         # train mode?
         self._is_train_mode = rospy.get_param("/train_mode")
+
+        # additional full range laser to cover blind spots
+        self._full_range_laser = rospy.get_param("laser/full_range_laser", False)
 
         # synchronization parameters
         self._ext_time_sync = external_time_sync
@@ -88,9 +92,16 @@ class ObservationCollector:
             self._robot_state_sub = message_filters.Subscriber(
                 self.ns_prefix("odom") if ns else "odom", Odometry
             )
+            fs = [self._scan_sub, self._robot_state_sub]
+
+            if self._full_range_laser:
+                self._full_scan_sub = message_filters.Subscriber(
+                    self.ns_prefix("full_scan"), LaserScan
+                )
+                fs.append(self._full_scan_sub)
 
             self.ts = message_filters.ApproximateTimeSynchronizer(
-                [self._scan_sub, self._robot_state_sub],
+                fs,
                 self.max_deque_size,
                 slop=self._sync_slop,
             )
@@ -101,6 +112,13 @@ class ObservationCollector:
                 self.ns_prefix("front/scan") if ns else "front/scan",
                 LaserScan,
                 self.callback_scan,
+                tcp_nodelay=True,
+            )
+
+            self._full_scan_sub = rospy.Subscriber(
+                self.ns_prefix("full_scan"),
+                LaserScan,
+                self.callback_full_scan,
                 tcp_nodelay=True,
             )
 
@@ -171,6 +189,15 @@ class ObservationCollector:
             "last_action": kwargs.get("last_action", np.array([0, 0, 0])),
         }
 
+        if self._full_range_laser:
+            if len(self._full_scan.ranges) > 0:
+                obs_dict["full_laser_scan"] = self._full_scan.ranges.astype(np.float32)
+            else:
+                obs_dict["scan"] = np.zeros(self._laser_num_beams, dtype=float)
+                obs_dict["full_laser_scan"] = np.zeros(
+                    self._laser_num_beams, dtype=float
+                )
+
         self._laser_deque.clear()
         self._rs_deque.clear()
 
@@ -219,9 +246,11 @@ class ObservationCollector:
         # print(f"Laser_stamp: {laser_stamp}, Robot_stamp: {robot_stamp}")
         return laser_scan, robot_pose
 
-    def callback_odom_scan(self, scan, odom):
+    def callback_odom_scan(self, scan, odom, full_scan):
         self._scan = self.process_scan_msg(scan)
         self._robot_pose, self._robot_vel = self.process_robot_state_msg(odom)
+        if self._full_range_laser:
+            self._full_scan = self.process_scan_msg(full_scan)
 
     def callback_clock(self, msg_Clock):
         self._clock = msg_Clock.clock.to_sec()
@@ -244,6 +273,16 @@ class ObservationCollector:
         self.received_scan = True
 
         self._scan = self.process_scan_msg(msg_laserscan)
+
+    def callback_full_scan(self, msg_laserscan):
+        # if len(self._laser_deque) == self.max_deque_size:
+        #     self._laser_deque.popleft()
+
+        # self._laser_deque.append(msg_laserscan)
+
+        self.received_scan = True
+
+        self._full_scan = self.process_scan_msg(msg_laserscan)
 
     def callback_robot_state(self, msg_robotstate):
         # if len(self._rs_deque) == self.max_deque_size:
