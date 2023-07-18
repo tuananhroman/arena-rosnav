@@ -1,4 +1,4 @@
-action_frequency: 4
-robot_action_rate: 4
+action_frequency: 5
+robot_action_rate: 5
 laser_update_rate: 10
 disable_intermediate_planner: true

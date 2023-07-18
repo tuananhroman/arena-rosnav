@@ -32,11 +32,16 @@ class DeploymentDRLAgent:
             ns, rospy.get_param("laser/num_beams"), external_time_sync=False
         )
 
-        self._max_laser_range = rospy.get_param(os.path.join(ns, "laser", "range"))
+        laser_range_param = os.path.join(ns, "laser", "range") if ns else "laser/range"
+        self._max_laser_range = rospy.get_param(laser_range_param)
 
-        self._action_pub = rospy.Publisher(f"{ns}/cmd_vel", Twist, queue_size=1)
+        self._action_pub = rospy.Publisher(
+            f"{ns}/cmd_vel" if ns else "cmd_vel", Twist, queue_size=1
+        )
         self._reset_stacked_obs_pub = rospy.Publisher(
-            f"{ns}/rosnav/reset_stacked_obs", ResetStackedObs, queue_size=1
+            f"{ns}/rosnav/reset_stacked_obs" if ns else "rosnav/reset_stacked_obs",
+            ResetStackedObs,
+            queue_size=1,
         )
 
         self.ns = ns
@@ -45,11 +50,17 @@ class DeploymentDRLAgent:
         self.last_action = [0, 0, 0]
         self.last_time = 0
 
-        rospy.wait_for_service(f"{ns}/rosnav/get_action")
-        self._get_action_srv = rospy.ServiceProxy(f"{ns}/rosnav/get_action", GetAction)
+        rospy.wait_for_service(f"{ns}/rosnav/get_action" if ns else "rosnav/get_action")
+        self._get_action_srv = rospy.ServiceProxy(
+            f"{ns}/rosnav/get_action" if ns else "rosnav/get_action", GetAction
+        )
 
         rospy.Subscriber("/scenario_reset", Int16, self._episode_reset_callback)
-        rospy.Subscriber("/clock", Clock, callback=self._clock_callback)
+        rospy.Timer(
+            rospy.Duration(1 / rospy.get_param("action_frequency", ACTION_FREQUENCY)),
+            self.next_action,
+        )
+        # rospy.Subscriber("/clock", Clock, callback=self._clock_callback)
 
     @staticmethod
     def _get_action_frequency_in_nsecs():
@@ -63,6 +74,9 @@ class DeploymentDRLAgent:
         if curr_time - self.last_time <= self._action_period_time:
             return
 
+        self._get_and_publish_next_action()
+
+    def next_action(self, data):
         self._get_and_publish_next_action()
 
     def _episode_reset_callback(self, data: Int16):
@@ -109,7 +123,7 @@ class DeploymentDRLAgent:
 def parse_args():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("-ns", "--namespace", type=str)
+    parser.add_argument("-ns", "--namespace", type=str, default=None)
 
     return parser.parse_known_args()[0]
 
