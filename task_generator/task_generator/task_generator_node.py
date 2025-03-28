@@ -10,11 +10,11 @@ import rclpy.executors
 
 
 def init_launch_service(
-    CONCURRENT: bool
+    CONCURRENT: bool,
 ) -> tuple[
     typing.Callable[[], typing.Any],
     typing.Callable[[launch.LaunchDescription], typing.Any],
-    typing.Callable[[], None]
+    typing.Callable[[], None],
 ]:
     """
     Initiate launch service.
@@ -28,7 +28,7 @@ def init_launch_service(
     """
 
     def _do_launch(
-            launch_description: launch.LaunchDescription
+        launch_description: launch.LaunchDescription,
     ) -> typing.Callable[[], typing.Any]:
 
         # https://github.com/ros2/launch/issues/724#issue-1851039469
@@ -43,12 +43,7 @@ def init_launch_service(
             launch_task = loop.create_task(launch_service.run_async())
 
             try:
-                loop.run_until_complete(
-                    loop.run_in_executor(
-                        None,
-                        stop_event.wait
-                    )
-                )
+                loop.run_until_complete(loop.run_in_executor(None, stop_event.wait))
             except KeyboardInterrupt:
                 stop_event.set()
 
@@ -61,11 +56,7 @@ def init_launch_service(
 
         stop_event = multiprocessing.Event()
         process = multiprocessing.Process(
-            target=run_process, args=(
-                stop_event,
-                launch_description
-            ),
-            daemon=True
+            target=run_process, args=(stop_event, launch_description), daemon=True
         )
         process.start()
 
@@ -113,9 +104,7 @@ def main(args=None):
     else:
         executor = rclpy.executors.SingleThreadedExecutor()
 
-    launch_loop, do_launch, launch_cleanup = init_launch_service(
-        CONCURRENT=CONCURRENT
-    )
+    launch_loop, do_launch, launch_cleanup = init_launch_service(CONCURRENT=CONCURRENT)
 
     from . import init_task_gen_node
 
@@ -124,12 +113,12 @@ def main(args=None):
     executor.add_node(node)
 
     try:
-        node.get_logger().info('Beginning client, shut down with CTRL-C')
+        node.get_logger().info("Beginning client, shut down with CTRL-C")
         while rclpy.ok():
             executor.spin_once()
             launch_loop()
     except KeyboardInterrupt:
-        node.get_logger().info('Keyboard interrupt, shutting down.')
+        node.get_logger().info("Keyboard interrupt, shutting down.")
 
     launch_cleanup()
     node.destroy_node()

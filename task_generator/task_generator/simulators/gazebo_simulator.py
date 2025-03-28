@@ -8,11 +8,17 @@ import launch_ros
 import rclpy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from ros_gz_interfaces.msg import Entity, EntityFactory, WorldControl
-from ros_gz_interfaces.srv import (ControlWorld, DeleteEntity, SetEntityPose,
-                                   SpawnEntity)
+from ros_gz_interfaces.srv import ControlWorld, DeleteEntity, SetEntityPose, SpawnEntity
 
-from task_generator.shared import (EntityProps, Model, ModelType, ModelWrapper,
-                                   PositionOrientation, RobotProps, Wall)
+from task_generator.shared import (
+    EntityProps,
+    Model,
+    ModelType,
+    ModelWrapper,
+    PositionOrientation,
+    RobotProps,
+    Wall,
+)
 from task_generator.simulators import BaseSimulator
 
 
@@ -23,43 +29,45 @@ class GazeboSimulator(BaseSimulator):
     def _set_up_services(self):
 
         self.node.do_launch(
-            launch.LaunchDescription([
-                launch_ros.actions.Node(
-                    package='ros_gz_bridge',
-                    executable='parameter_bridge',
-                    name='gz_services_bridge',
-                    output='screen',
-                    arguments=[
-                        '/world/default/create@ros_gz_interfaces/srv/SpawnEntity',
-                        '/world/default/remove@ros_gz_interfaces/srv/DeleteEntity',
-                        '/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose',
-                        '/world/default/control@ros_gz_interfaces/srv/ControlWorld',
-                    ],
-                    parameters=[{'use_sim_time': True}],
-                )
-            ])
+            launch.LaunchDescription(
+                [
+                    launch_ros.actions.Node(
+                        package="ros_gz_bridge",
+                        executable="parameter_bridge",
+                        name="gz_services_bridge",
+                        output="screen",
+                        arguments=[
+                            "/world/default/create@ros_gz_interfaces/srv/SpawnEntity",
+                            "/world/default/remove@ros_gz_interfaces/srv/DeleteEntity",
+                            "/world/default/set_pose@ros_gz_interfaces/srv/SetEntityPose",
+                            "/world/default/control@ros_gz_interfaces/srv/ControlWorld",
+                        ],
+                        parameters=[{"use_sim_time": True}],
+                    )
+                ]
+            )
         )
 
         # Initialize service clients
         # https://gazebosim.org/api/sim/8/entity_creation.html
         self._spawn_entity = self.node.create_client(
             SpawnEntity,
-            '/world/default/create',
+            "/world/default/create",
             callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._delete_entity = self.node.create_client(
             DeleteEntity,
-            '/world/default/remove',
+            "/world/default/remove",
             callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._set_entity_pose = self.node.create_client(
             SetEntityPose,
-            '/world/default/set_pose',
+            "/world/default/set_pose",
             callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._control_world = self.node.create_client(
             ControlWorld,
-            '/world/default/control',
+            "/world/default/control",
             callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
 
@@ -89,7 +97,8 @@ class GazeboSimulator(BaseSimulator):
         self._set_up_services()
 
         self.node.get_logger().info(
-            f"Initializing GazeboSimulator with namespace: {namespace}")
+            f"Initializing GazeboSimulator with namespace: {namespace}"
+        )
         self._goal_pub = self.node.create_publisher(
             PoseStamped,
             self._namespace("goal"),
@@ -108,16 +117,13 @@ class GazeboSimulator(BaseSimulator):
         try:
             self.unpause_simulation()
         except Exception as e:
-            self.node.get_logger().error(
-                f"Error unpausing simulation: {str(e)}")
+            self.node.get_logger().error(f"Error unpausing simulation: {str(e)}")
             traceback.print_exc()
             raise
 
     def move_entity(self, name, position):
-        self.node.get_logger().info(
-            f"Attempting to move entity: {name}")
-        self.node.get_logger().info(
-            f"Moving entity {name} to position: {position}")
+        self.node.get_logger().info(f"Attempting to move entity: {name}")
+        self.node.get_logger().info(f"Moving entity {name} to position: {position}")
         request = SetEntityPose.Request()
         request.entity = Entity(
             name=name,
@@ -135,7 +141,9 @@ class GazeboSimulator(BaseSimulator):
 
             self.node.get_logger().info(f"Move result for {name}: {result.success}")
 
-            if result.success and isinstance((entity := self.entities.get(name, None)), RobotProps):
+            if result.success and isinstance(
+                (entity := self.entities.get(name, None)), RobotProps
+            ):
                 entity = attrs.evolve(entity, position=position)
                 self._robot_initialpose(entity)
 
@@ -154,10 +162,14 @@ class GazeboSimulator(BaseSimulator):
             request.entity_factory.name = entity.name
 
             # Get model description
-            model_description = entity.model.get([ModelType.SDF, ModelType.URDF]).description
+            model_description = entity.model.get(
+                [ModelType.SDF, ModelType.URDF]
+            ).description
 
             if isinstance(entity, RobotProps):
-                model_description = model_description.replace("jackal_default_name", entity.name)
+                model_description = model_description.replace(
+                    "jackal_default_name", entity.name
+                )
                 self._robot_initialpose(entity)
                 self._robot_bridge(entity, model_description)
 
@@ -167,7 +179,8 @@ class GazeboSimulator(BaseSimulator):
             request.entity_factory.pose = entity.position.to_pose()
 
             self.node.get_logger().info(
-                f"Spawn position for {entity.name}: x={entity.position.x}, y={entity.position.y}")
+                f"Spawn position for {entity.name}: x={entity.position.x}, y={entity.position.y}"
+            )
 
             self._spawn_entity.wait_for_service()
             self.node.get_logger().info(f"Sending spawn request for {entity.name}")
@@ -175,11 +188,13 @@ class GazeboSimulator(BaseSimulator):
 
             if result is None:
                 self.node.get_logger().error(
-                    f"Spawn service call failed for {entity.name}")
+                    f"Spawn service call failed for {entity.name}"
+                )
                 return False
 
             self.node.get_logger().info(
-                f"Spawn result for {entity.name}: {result.success}")
+                f"Spawn result for {entity.name}: {result.success}"
+            )
 
             self.entities[entity.name] = entity
 
@@ -187,13 +202,13 @@ class GazeboSimulator(BaseSimulator):
 
         except Exception as e:
             self.node.get_logger().error(
-                f"Error spawning entity {entity.name}: {str(e)}")
+                f"Error spawning entity {entity.name}: {str(e)}"
+            )
             traceback.print_exc()
             return False
 
     def delete_entity(self, name: str):
-        self.node.get_logger().info(
-            f"Attempting to delete entity: {name}")
+        self.node.get_logger().info(f"Attempting to delete entity: {name}")
 
         if not name in self.entities:
             return False
@@ -210,12 +225,10 @@ class GazeboSimulator(BaseSimulator):
             result = self._delete_entity.call(request)
 
             if result is None:
-                self.node.get_logger().error(
-                    f"Delete service call failed for {name}")
+                self.node.get_logger().error(f"Delete service call failed for {name}")
                 return False
 
-            self.node.get_logger().info(
-                f"Delete result for {name}: {result.success}")
+            self.node.get_logger().info(f"Delete result for {name}: {result.success}")
 
             if result.success:
                 del self.entities[name]
@@ -223,8 +236,7 @@ class GazeboSimulator(BaseSimulator):
             return result.success
 
         except Exception as e:
-            self.node.get_logger().error(
-                f"Error deleting entity {name}: {str(e)}")
+            self.node.get_logger().error(f"Error deleting entity {name}: {str(e)}")
             traceback.print_exc()
             return False
 
@@ -269,8 +281,7 @@ class GazeboSimulator(BaseSimulator):
             return result.success
 
         except Exception as e:
-            self.node.get_logger().error(
-                f"Error unpausing simulation: {str(e)}")
+            self.node.get_logger().error(f"Error unpausing simulation: {str(e)}")
             traceback.print_exc()
             return False
 
@@ -292,14 +303,14 @@ class GazeboSimulator(BaseSimulator):
             return result.success
 
         except Exception as e:
-            self.node.get_logger().error(
-                f"Error stepping simulation: {str(e)}")
+            self.node.get_logger().error(f"Error stepping simulation: {str(e)}")
             traceback.print_exc()
             return False
 
     def _publish_goal(self, goal: PositionOrientation):
         self.node.get_logger().info(
-            f"Publishing goal: x={goal.x}, y={goal.y}, orientation={goal.orientation}")
+            f"Publishing goal: x={goal.x}, y={goal.y}, orientation={goal.orientation}"
+        )
         goal_msg = PoseStamped()
         goal_msg.header.stamp = self.node.get_clock().now().to_msg()
         goal_msg.header.frame_id = "map"
@@ -322,11 +333,13 @@ class GazeboSimulator(BaseSimulator):
             walls=walls,
             height=wall_height,
             thickness=wall_thickness,
-            base_position=base_position
+            base_position=base_position,
         )
 
         if not wall_sdf:
-            self.node.get_logger().error(f"Failed to generate SDF for walls: {wall_name}")
+            self.node.get_logger().error(
+                f"Failed to generate SDF for walls: {wall_name}"
+            )
             return False
 
         entity = EntityProps(
@@ -336,7 +349,7 @@ class GazeboSimulator(BaseSimulator):
                     type=ModelType.SDF,
                     name=wall_name,
                     description=wall_sdf,
-                    path='',
+                    path="",
                 )
             ),
             name=wall_name,
@@ -417,7 +430,7 @@ class GazeboSimulator(BaseSimulator):
                         x=x,
                         y=y,
                         z=z + base_z,
-                        orientation=orientation
+                        orientation=orientation,
                     )
                 )
 
@@ -426,7 +439,7 @@ class GazeboSimulator(BaseSimulator):
                 base_x=base_x,
                 base_y=base_y,
                 base_z=base_z,
-                links="\n".join(links)
+                links="\n".join(links),
             )
 
         except Exception as e:
@@ -436,7 +449,7 @@ class GazeboSimulator(BaseSimulator):
     def _robot_bridge(self, robot: RobotProps, description: str):
         launch_description = launch.LaunchDescription()
 
-        gz_topic = '/model/' + robot.name
+        gz_topic = "/model/" + robot.name
         launch_description.add_action(
             launch_ros.actions.PushRosNamespace(
                 namespace=self.node.service_namespace(robot.name)
@@ -444,33 +457,54 @@ class GazeboSimulator(BaseSimulator):
         )
         launch_description.add_action(
             launch_ros.actions.Node(
-                package='ros_gz_bridge',
-                executable='parameter_bridge',
-                output='screen',
+                package="ros_gz_bridge",
+                executable="parameter_bridge",
+                output="screen",
                 arguments=[
                     # Odometry (Gazebo -> ROS2)
-                    gz_topic + '/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry',
+                    gz_topic + "/odometry@nav_msgs/msg/Odometry[gz.msgs.Odometry",
                     # IMU (Gazebo -> ROS2)
-                    '/world/default/model/' + robot.name + '/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU',
+                    "/world/default/model/"
+                    + robot.name
+                    + "/link/base_link/sensor/imu_sensor/imu@sensor_msgs/msg/Imu[gz.msgs.IMU",
                     # Velocity command (ROS2 -> Gazebo)
-                    gz_topic + '/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist',
+                    gz_topic + "/cmd_vel@geometry_msgs/msg/Twist]gz.msgs.Twist",
                     # LiDAR Scan (Gazebo -> ROS2)
-                    '/world/default/model/' + robot.name + '/link/base_link/sensor/gpu_lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan',
+                    "/world/default/model/"
+                    + robot.name
+                    + "/link/base_link/sensor/gpu_lidar/scan@sensor_msgs/msg/LaserScan[gz.msgs.LaserScan",
                     # LiDAR Point Cloud (Gazebo -> ROS2)
-                    '/world/default/model/' + robot.name + '/link/base_link/sensor/gpu_lidar/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked',
+                    "/world/default/model/"
+                    + robot.name
+                    + "/link/base_link/sensor/gpu_lidar/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
                     # TF Data (Gazebo -> ROS2)
-                    gz_topic + '/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V',
-                    gz_topic + '/tf_static@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V'
+                    gz_topic + "/tf@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
+                    gz_topic + "/tf_static@tf2_msgs/msg/TFMessage[gz.msgs.Pose_V",
                 ],
                 remappings=[
-                    (gz_topic + '/tf', '/tf'),
-                    (gz_topic + '/odometry', 'odom'),
-                    ('/world/default/model/' + robot.name + '/link/base_link/sensor/imu_sensor/imu', 'imu/data'),
-                    (gz_topic + '/cmd_vel', 'cmd_vel'),
-                    ('/world/default/model/' + robot.name + '/link/base_link/sensor/gpu_lidar/scan', 'lidar'),
-                    ('/world/default/model/' + robot.name + '/link/base_link/sensor/gpu_lidar/scan/points', 'lidar/points'),
+                    (gz_topic + "/tf", "/tf"),
+                    (gz_topic + "/odometry", "odom"),
+                    (
+                        "/world/default/model/"
+                        + robot.name
+                        + "/link/base_link/sensor/imu_sensor/imu",
+                        "imu/data",
+                    ),
+                    (gz_topic + "/cmd_vel", "cmd_vel"),
+                    (
+                        "/world/default/model/"
+                        + robot.name
+                        + "/link/base_link/sensor/gpu_lidar/scan",
+                        "lidar",
+                    ),
+                    (
+                        "/world/default/model/"
+                        + robot.name
+                        + "/link/base_link/sensor/gpu_lidar/scan/points",
+                        "lidar/points",
+                    ),
                 ],
-                parameters=[{'use_sim_time': True}],
+                parameters=[{"use_sim_time": True}],
             )
         )
         # launch_description.add_action(
@@ -504,8 +538,17 @@ class GazeboSimulator(BaseSimulator):
                 package="tf2_ros",
                 executable="static_transform_publisher",
                 name="map_to_odomframe_publisher",
-                arguments=[str(robot.position.x), str(robot.position.y), "0", "0", "0", str(robot.position.orientation), "map", robot.frame + "odom"],
-                parameters=[{'use_sim_time': True}],
+                arguments=[
+                    str(robot.position.x),
+                    str(robot.position.y),
+                    "0",
+                    "0",
+                    "0",
+                    str(robot.position.orientation),
+                    "map",
+                    robot.frame + "odom",
+                ],
+                parameters=[{"use_sim_time": True}],
             ),
         )
         self.node.do_launch(launch_description)

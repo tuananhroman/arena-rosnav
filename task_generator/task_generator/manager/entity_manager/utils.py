@@ -1,16 +1,18 @@
 import enum
-from io import StringIO
 import os
-from typing import Any, Dict, List, Optional, Union
 import xml.etree.ElementTree as ET
+from io import StringIO
+from typing import Any, Dict, List, Optional, Union
+
 import attrs
 import cv2
 import numpy as np
-
 import yaml
+from rosnav_rl.states.simulation.states import RobotState
+
+import task_generator.utils.arena as Utils
 from task_generator.constants import Constants
 from task_generator.manager.world_manager.utils import WorldMap, WorldOccupancy
-
 from task_generator.shared import (
     Model,
     ModelType,
@@ -21,7 +23,6 @@ from task_generator.shared import (
     PositionOrientation,
     rosparam_get,
 )
-import task_generator.utils.arena as Utils
 
 
 class SDFUtil:
@@ -38,8 +39,7 @@ class SDFUtil:
         return file.getvalue()
 
     @staticmethod
-    def get_model_root(sdf: ET.ElementTree,
-                       tag="model") -> Union[ET.Element, None]:
+    def get_model_root(sdf: ET.ElementTree, tag="model") -> Union[ET.Element, None]:
         root = sdf.getroot()
         if root.tag != tag:
             root = root.find(tag)
@@ -166,8 +166,7 @@ class YAMLUtil:
                 return YAMLUtil.parse_yaml(file.read())
 
         else:
-            raise ValueError(
-                f"can't process yaml descriptor of type {type(yaml)}")
+            raise ValueError(f"can't process yaml descriptor of type {type(yaml)}")
 
     @staticmethod
     def serialize(obj: Any):
@@ -187,7 +186,9 @@ class YAMLUtil:
         return f"{namespace.robot_ns}/{frame_id}"
 
     @staticmethod
-    def update_plugins(namespace: Namespace, description: Any) -> Any:
+    def update_plugins(
+        namespace: Namespace, description: Any, robot_state: Optional[RobotState] = None
+    ) -> Any:
         plugins: List[Dict] = description.get("plugins", [])
 
         if Utils.get_arena_type() == Constants.ArenaType.TRAINING:
@@ -195,19 +196,20 @@ class YAMLUtil:
                 plugins.append(Constants.PLUGIN_FULL_RANGE_LASER.copy())
 
             for plugin in plugins:
-                for prop in YAMLUtil.PLUGIN_PROPS_TO_EXTEND.get(
-                        plugin["type"], []):
+                for prop in YAMLUtil.PLUGIN_PROPS_TO_EXTEND.get(plugin["type"], []):
                     default_val = None
                     if prop not in plugin:
                         default_val = YAMLUtil.PLUGIN_PROPS_DEFAULT_VAL[plugin["type"]][
                             prop
                         ]
-                    plugin[prop] = namespace(
-                        (
-                            plugin.get(prop, "")
-                            if not default_val
-                            else plugin.get(prop, default_val)
-                        ),
+                    plugin[prop] = str(
+                        namespace(
+                            (
+                                plugin.get(prop, "")
+                                if not default_val
+                                else plugin.get(prop, default_val)
+                            ),
+                        )
                     )
 
                     # if plugin["type"] == "DiffDrive":
@@ -218,15 +220,12 @@ class YAMLUtil:
             return description
 
         for plugin in plugins:
-            for prop in YAMLUtil.PLUGIN_PROPS_TO_EXTEND.get(
-                    plugin["type"], []):
+            for prop in YAMLUtil.PLUGIN_PROPS_TO_EXTEND.get(plugin["type"], []):
                 plugin[prop] = os.path.join(namespace, plugin.get(prop, ""))
         return description
 
 
-tmp_dir = os.path.join(
-    Utils.get_simulation_setup_path(), "tmp", "heightmap"
-)
+tmp_dir = os.path.join(Utils.get_simulation_setup_path(), "tmp", "heightmap")
 os.makedirs(tmp_dir, exist_ok=True)
 
 
