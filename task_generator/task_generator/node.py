@@ -22,8 +22,7 @@ from task_generator.manager.robot_manager.robots_manager_ros import RobotsManage
 from task_generator import NodeInterface
 from task_generator.constants import Constants
 from task_generator.constants.runtime import Configuration
-from task_generator.manager.entity_manager import (EntityManager,
-                                                   EntityManagerRegistry)
+from task_generator.manager.entity_manager import EntityManager, EntityManagerRegistry
 from task_generator.manager.obstacle_manager import ObstacleManager
 from task_generator.manager.world_manager import WorldManager
 from task_generator.shared import Namespace
@@ -78,10 +77,9 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         self,
         namespace: str = "task_generator_node",
         *,
-        do_launch: typing.Callable[[launch.LaunchDescription], None]
-
+        do_launch: typing.Callable[[launch.LaunchDescription], None],
     ):
-        rclpy.node.Node.__init__(self, 'task_generator')
+        rclpy.node.Node.__init__(self, "task_generator")
         ROSParamServer.__init__(self)
         self.conf = Configuration(self)
 
@@ -90,24 +88,28 @@ class TaskGenerator(NodeInterface.Taskgen_T):
 
         Task.declare_parameters(self)
 
-        self._auto_reset = self.rosparam[bool].get('auto_reset', True)
-        self._train_mode = self.rosparam[bool].get('train_mode', False)
+        self._auto_reset = self.rosparam[bool].get("auto_reset", True)
+        self._train_mode = self.rosparam[bool].get("train_mode", False)
 
         # Publishers
         if not self._train_mode:
             self._pub_scenario_reset = self.create_publisher(
-                Int16, 'scenario_reset', 1,
+                Int16,
+                "scenario_reset",
+                1,
                 callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
             )
             self._pub_scenario_finished = self.create_publisher(
-                Empty, 'scenario_finished', 10,
+                Empty,
+                "scenario_finished",
+                10,
                 callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
             )
 
             # Services
             self.create_service(
                 EmptySrv,
-                self.service_namespace('reset_task'),
+                self.service_namespace("reset_task"),
                 self._reset_task_srv_callback,
                 callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
             )
@@ -148,7 +150,7 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         #     pass
 
         self._initialized = True
-        self.rosparam[bool].set('initialized', True)
+        self.rosparam[bool].set("initialized", True)
 
     def _get_predefined_task(self, **kwargs):
         """
@@ -160,7 +162,9 @@ class TaskGenerator(NodeInterface.Taskgen_T):
 
         self._world_manager = WorldManager()
 
-        self._entity_manager = EntityManagerRegistry.get(self.conf.Arena.ENTITY_MANAGER.value)(
+        self._entity_manager = EntityManagerRegistry.get(
+            self.conf.Arena.ENTITY_MANAGER.value
+        )(
             namespace=self._namespace,
             simulator=self._simulator,
         )
@@ -175,6 +179,7 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         def on_world_change():
             obstacle_manager.reset()
             obstacle_manager.spawn_world_obstacles(self._world_manager.world)
+
         self._world_manager.on_world_change(on_world_change)
 
         self._robots_manager = RobotsManagerROS(self._entity_manager)
@@ -222,18 +227,20 @@ class TaskGenerator(NodeInterface.Taskgen_T):
             self.reset_task()
 
     def _reset_task_srv_callback(
-        self,
-        request: std_srvs.Empty.Request,
-        response: std_srvs.Empty.Response
+        self, request: std_srvs.Empty.Request, response: std_srvs.Empty.Response
     ):
         self.get_logger().debug("Task Generator received task-reset request!")
         self.reset_task()
         return response
 
     def _send_end_message_on_end(self):
-        if self.conf.General.DESIRED_EPISODES.value < 0 or self._number_of_resets < self.conf.General.DESIRED_EPISODES.value:
+        if (
+            self.conf.General.DESIRED_EPISODES.value < 0
+            or self._number_of_resets < self.conf.General.DESIRED_EPISODES.value
+        ):
             return
 
         self.get_logger().info(
-            f"Shutting down. All {int(self.conf.General.DESIRED_EPISODES.value)} tasks completed")
+            f"Shutting down. All {int(self.conf.General.DESIRED_EPISODES.value)} tasks completed"
+        )
         rclpy.shutdown()

@@ -3,8 +3,9 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 import gymnasium
 import numpy as np
 import rospy
-from flatland_msgs.msg import StepWorld
+from flatland_msgs.msg import StepWorld  # type: ignore
 from geometry_msgs.msg import Twist
+from rl_utils.utils.envs import determine_termination
 from rl_utils.utils.type_alias.observation import InformationDict
 from rosnav_rl.observations import (
     DoneObservation,
@@ -19,18 +20,9 @@ from rosnav_rl.utils.rostopic import Namespace
 from rosnav_rl.utils.type_aliases import EncodedObservationDict, ObservationDict
 from std_srvs.srv import Empty
 
-
-# TODO: TaskGenerator import
+# TODO: TaskGenerator update
 from task_generator.task_generator_node import TaskGenerator
 from task_generator.tasks import Task
-
-
-def get_ns_idx(ns: str):
-    try:
-        return int(re.search(r"\d+", ns)[0])
-    except Exception:
-        return random.uniform(0, 3)
-        # return 0.5
 
 
 class FlatlandEnv(gymnasium.Env):
@@ -43,7 +35,8 @@ class FlatlandEnv(gymnasium.Env):
         reward_function: Union[RewardFunction, Dict[str, Any]],
         simulation_state_container: Optional[SimulationStateContainer],
         max_steps_per_episode=100,
-        trigger_init: bool = False,
+        init_by_call: bool = False,
+        wait_for_obs: bool = False,
         obs_unit_kwargs=None,
         task_generator_kwargs=None,
         start_ros_node: bool = True,
@@ -82,6 +75,8 @@ class FlatlandEnv(gymnasium.Env):
         self.ns = Namespace(ns) if type(ns) is str else ns
 
         self._debug_mode = rospy.get_param("/debug_mode", False)
+        self._is_train_mode = rospy.get_param("/train_mode", default=True)
+        self._step_size = rospy.get_param("/step_size")
 
         if self._is_train_mode and reward_function is None:
             raise ValueError("Reward function is required for the training.")
@@ -107,52 +102,8 @@ class FlatlandEnv(gymnasium.Env):
         self._max_steps_per_episode = max_steps_per_episode
         self.__is_first = True
 
-        if not trigger_init:
+        if not init_by_call:
             self.init()
-
-    def init(self):
-        """
-        Initializes the environment for training or evaluation.
-
-        If the environment is in training mode, it sets up the environment accordingly.
-        It then determines the required observation units based on the reward function
-        and the observation space list. If a full range laser is attached to the robot,
-        it adds the FullRangeLaserCollector to the observation units.
-
-        Finally, it initializes the ObservationManager with the required observation units
-        and other necessary parameters.
-
-        Attributes:
-            is_train_mode (bool): Indicates if the environment is in training mode.
-            _setup_env_for_training (function): Sets up the environment for training.
-            _reward_function (object): The reward function used in the environment.
-            _model_space_manager (object): Manages the observation space list.
-            __simulation_state_container (object): Contains the state of the simulation.
-            _obs_unit_kwargs (dict): Additional keyword arguments for observation units.
-            __wait_for_obs (bool): Indicates if the environment should wait for observations.
-            ns (str): Namespace for the observation manager.
-        """
-        if self.is_train_mode:
-            self._setup_env_for_training()
-
-        required_obs_units = get_required_observation_units(
-            self._reward_function.reward_units
-            + self._model_space_manager.observation_space_list
-            if self.is_train_mode
-            else self._model_space_manager.observation_space_list
-        )
-
-        # get obs structure
-        if self.__simulation_state_container.robot.laser_state.attach_full_range_laser:
-            required_obs_units.append(FullRangeLaserCollector)
-
-        self.observation_collector = ObservationManager(
-            ns=self.ns,
-            obs_structur=required_obs_units,
-            simulation_state_container=self.__simulation_state_container,
-            obs_unit_kwargs=self._obs_unit_kwargs,
-            wait_for_obs=self.__wait_for_obs,
-        )
 
     @property
     def action_space(self) -> gymnasium.spaces.Box:
@@ -239,7 +190,17 @@ class FlatlandEnv(gymnasium.Env):
             self._service_name_step, Empty, persistent=True
         )
 
-    def _pub_action(self, action: np.ndarray) -> Twist:
+    def _pub_action(self, action: np.ndarray):
+        """
+        Publishes the given action to the agent's action topic.
+
+        Args:
+            action (np.ndarray): The action to be published. It should be a 1D numpy array of length 3,
+                                 representing the linear x, linear y, and angular z components of the action.
+
+        Raises:
+            AssertionError: If the length of the action array is not 3.
+        """
         assert len(action) == 3
 
         action_msg = Twist()
@@ -275,6 +236,50 @@ class FlatlandEnv(gymnasium.Env):
 
         """
         return self._model_space_manager.encode_observation(observation, **kwargs)
+
+    def init(self):
+        """
+        Initializes the environment for training or evaluation.
+
+        If the environment is in training mode, it sets up the environment accordingly.
+        It then determines the required observation units based on the reward function
+        and the observation space list. If a full range laser is attached to the robot,
+        it adds the FullRangeLaserCollector to the observation units.
+
+        Finally, it initializes the ObservationManager with the required observation units
+        and other necessary parameters.
+
+        Attributes:
+            is_train_mode (bool): Indicates if the environment is in training mode.
+            _setup_env_for_training (function): Sets up the environment for training.
+            _reward_function (object): The reward function used in the environment.
+            _model_space_manager (object): Manages the observation space list.
+            __simulation_state_container (object): Contains the state of the simulation.
+            _obs_unit_kwargs (dict): Additional keyword arguments for observation units.
+            __wait_for_obs (bool): Indicates if the environment should wait for observations.
+            ns (str): Namespace for the observation manager.
+        """
+        if self.is_train_mode:
+            self._setup_env_for_training()
+
+        required_obs_units = get_required_observation_units(
+            self._reward_function.reward_units
+            + self._model_space_manager.observation_space_list
+            if self.is_train_mode
+            else self._model_space_manager.observation_space_list
+        )
+
+        # get obs structure
+        if self.__simulation_state_container.robot.laser_state.attach_full_range_laser:
+            required_obs_units.append(FullRangeLaserCollector)
+
+        self.observation_collector = ObservationManager(
+            ns=self.ns,
+            obs_structur=required_obs_units,
+            simulation_state_container=self.__simulation_state_container,
+            obs_unit_kwargs=self._obs_unit_kwargs,
+            wait_for_obs=self.__wait_for_obs,
+        )
 
     def step(
         self, action: np.ndarray
@@ -312,7 +317,7 @@ class FlatlandEnv(gymnasium.Env):
         self._steps_curr_episode += 1
 
         # info
-        info, done = self._determine_termination(
+        info, done = determine_termination(
             reward_info=reward_info,
             curr_steps=self._steps_curr_episode,
             max_steps=self._max_steps_per_episode,
@@ -346,11 +351,7 @@ class FlatlandEnv(gymnasium.Env):
         super().reset(seed=seed)
         self._episode += 1
 
-        # make sure all simulation components are ready before first episode
-        if self._episode <= 1:
-            for _ in range(6):
-                self.agent_action_pub.publish(Twist())
-                self.call_service_takeSimStep()
+        self._before_task_reset()
 
         first_map = self._episode <= 1 if "sim_1" in self.ns else False
 
@@ -360,13 +361,8 @@ class FlatlandEnv(gymnasium.Env):
         )
         self._reward_function.reset()
         self._steps_curr_episode = 0
-        self._last_action = np.array([0, 0, 0])
 
-        if self._is_train_mode:
-            # extra step for planning serivce to provide global plan
-            for _ in range(2):
-                self.agent_action_pub.publish(Twist())
-                self.call_service_takeSimStep()
+        self._after_task_reset()
 
         obs_dict = self.observation_collector.get_observations(
             is_terminal=False, is_first=True
@@ -384,26 +380,11 @@ class FlatlandEnv(gymnasium.Env):
         Close the environment.
 
         """
-        pass
+        rospy.signal_shutdown("Closing environment...")
 
-    def _determine_termination(
-        self,
-        reward_info: dict,
-        curr_steps: int,
-        max_steps: int,
-        info: dict = None,
-    ) -> Tuple[dict, bool]:
+    def _before_task_reset(self):
         """
-        Determine if the episode should terminate.
-
-        Args:
-            reward_info (dict): The reward information.
-            curr_steps (int): The current number of steps in the episode.
-            max_steps (int): The maximum number of steps per episode.
-            info (dict): Additional information.
-
-        Returns:
-            tuple: A tuple containing the info dictionary and a boolean flag indicating if the episode should terminate.
+        Perform any necessary steps before resetting the task.
 
         """
         # make sure all simulation components are ready before first episode
@@ -412,9 +393,11 @@ class FlatlandEnv(gymnasium.Env):
                 self.agent_action_pub.publish(Twist())
                 self._call_service_takeSimStep()
 
-        if info is None:
-            info = {}
+    def _after_task_reset(self):
+        """
+        Perform any necessary steps after resetting the task.
 
+        """
         if self.is_train_mode:
             # extra step for planning serivce to provide global plan
             for _ in range(4):

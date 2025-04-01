@@ -1,5 +1,5 @@
 import os
-import typing
+from typing import Dict, List, Type, Optional
 
 import rclpy
 
@@ -8,12 +8,7 @@ from task_generator.constants import Constants
 from task_generator.manager.obstacle_manager import ObstacleManager
 from task_generator.manager.robot_manager.robots_manager_ros import RobotsManager
 from task_generator.manager.world_manager import WorldManager
-from task_generator.shared import (
-    DefaultParameter,
-    Namespace,
-    PositionOrientation,
-    rosparam_set,
-)
+from task_generator.shared import DefaultParameter, Namespace, PositionOrientation, rosparam_set
 from task_generator.tasks import Namespaced, Task
 from task_generator.tasks.modules import TM_Module
 from task_generator.tasks.obstacles import TM_Obstacles
@@ -21,30 +16,28 @@ from task_generator.tasks.robots import TM_Robots
 
 import std_msgs.msg as std_msgs
 import rosgraph_msgs.msg as rosgraph_msgs
-
 # import training.srv as training_srvs
 
 from task_generator.utils import ModelLoader
 
-import task_generator.utils.arena as Utils
+from rosnav_rl.states.simulation import TaskState
+
 
 
 class TaskFactory(Namespaced):
-    registry_obstacles: typing.Dict[
-        Constants.TaskMode.TM_Obstacles, typing.Callable[[], typing.Type[TM_Obstacles]]
-    ] = {}
-    registry_robots: typing.Dict[
-        Constants.TaskMode.TM_Robots, typing.Callable[[], typing.Type[TM_Robots]]
-    ] = {}
-    registry_module: typing.Dict[
-        Constants.TaskMode.TM_Module, typing.Callable[[], typing.Type[TM_Module]]
-    ] = {}
+    registry_obstacles: typing.Dict[Constants.TaskMode.TM_Obstacles,
+                                    typing.Callable[[], typing.Type[TM_Obstacles]]] = {}
+    registry_robots: typing.Dict[Constants.TaskMode.TM_Robots,
+                                 typing.Callable[[], typing.Type[TM_Robots]]] = {}
+    registry_module: typing.Dict[Constants.TaskMode.TM_Module,
+                                 typing.Callable[[], typing.Type[TM_Module]]] = {}
 
-    _namespace: typing.ClassVar[Namespace] = Namespaced.namespace("task")
+    _namespace: typing.ClassVar[Namespace] = Namespaced.namespace('task')
 
     @classmethod
     def register_obstacles(cls, name: Constants.TaskMode.TM_Obstacles):
-        def inner_wrapper(loader: typing.Callable[[], typing.Type[TM_Obstacles]]):
+        def inner_wrapper(
+                loader: typing.Callable[[], typing.Type[TM_Obstacles]]):
             assert (
                 name not in cls.registry_obstacles
             ), f"TaskMode '{name}' for obstacles already exists!"
@@ -52,7 +45,6 @@ class TaskFactory(Namespaced):
             def namespaced_loader():
                 class Inner(loader()):
                     _namespace = cls._namespace(name.value)
-
                 return Inner
 
             cls.registry_obstacles[name] = namespaced_loader
@@ -70,7 +62,6 @@ class TaskFactory(Namespaced):
             def namespaced_loader():
                 class Inner(loader()):
                     _namespace = cls._namespace(name.value)
-
                 return Inner
 
             cls.registry_robots[name] = namespaced_loader
@@ -88,7 +79,6 @@ class TaskFactory(Namespaced):
             def namespaced_loader():
                 class Inner(loader()):
                     _namespace = cls._namespace(name.value)
-
                 return Inner
 
             cls.registry_module[name] = namespaced_loader
@@ -97,9 +87,8 @@ class TaskFactory(Namespaced):
         return inner_wrapper
 
     @classmethod
-    def combine(
-        cls, modules: typing.List[Constants.TaskMode.TM_Module] = []
-    ) -> typing.Type[Task]:
+    def combine(cls, modules: typing.List[Constants.TaskMode.TM_Module] = [
+    ]) -> typing.Type[Task]:
         for module in modules:
             assert (
                 module in cls.registry_module
@@ -127,6 +116,14 @@ class TaskFactory(Namespaced):
 
             def __init__(
                 self,
+<<<<<<< HEAD
+=======
+                obstacle_manager: ObstacleManager,
+                robot_managers: List[RobotManager],
+                world_manager: WorldManager,
+                namespace: Namespace = "",
+                task_state: Optional[TaskState] = None,
+>>>>>>> og/master
                 *args,
                 obstacle_manager: ObstacleManager,
                 robots_manager: RobotsManager,
@@ -145,8 +142,7 @@ class TaskFactory(Namespaced):
                     *args: Variable length argument typing.List.
                     **kwargs: Arbitrary keyword arguments.
                 """
-                NodeInterface.__init__(self)
-
+                self.__task_state = task_state
                 self._force_reset = False
                 self.namespace = namespace
 
@@ -161,20 +157,16 @@ class TaskFactory(Namespaced):
                 ]
 
                 self._train_mode = self.node.get_parameter_or(
-                    "/train_mode", DefaultParameter(False)
-                ).value
+                    "/train_mode", DefaultParameter(False)).value
 
                 self.__reset_start = self.node.create_publisher(
-                    std_msgs.Empty, "reset_start", 1
-                )
+                    std_msgs.Empty, 'reset_start', 1)
                 self.__reset_end = self.node.create_publisher(
-                    std_msgs.Empty, "reset_end", 1
-                )
+                    std_msgs.Empty, 'reset_end', 1)
                 self.__reset_mutex = False
 
                 self.node.create_subscription(
-                    rosgraph_msgs.Clock, "/clock", self._clock_callback, 10
-                )
+                    rosgraph_msgs.Clock, '/clock', self._clock_callback, 10)
                 self.last_reset_time = 0
                 self.clock = rosgraph_msgs.Clock()
 
@@ -183,18 +175,16 @@ class TaskFactory(Namespaced):
                 self.model_loader = ModelLoader(
                     os.path.join(
                         Utils.get_simulation_setup_path(),
-                        "entities",
-                        "obstacles",
-                        "static",
-                    )
+                        'entities',
+                        'obstacles',
+                        'static')
                 )
                 self.dynamic_model_loader = ModelLoader(
                     os.path.join(
                         Utils.get_simulation_setup_path(),
-                        "entities",
-                        "obstacles",
-                        "dynamic",
-                    )
+                        'entities',
+                        'obstacles',
+                        'dynamic')
                 )
 
                 self.__param_tm_obstacles = None
@@ -206,12 +196,16 @@ class TaskFactory(Namespaced):
                 if self._train_mode:
                     self.set_tm_robots(
                         Constants.TaskMode.TM_Robots(
-                            self.node.conf.TaskMode.TM_ROBOTS.value
+                            rospy.get_param("tm_robots")
+                            if self.__task_state is None
+                            else self.__task_state.task_modules.tm_robots
                         )
                     )
                     self.set_tm_obstacles(
                         Constants.TaskMode.TM_Obstacles(
-                            self.node.conf.TaskMode.TM_OBSTACLES.value
+                            rospy.get_param("tm_obstacles")
+                            if self.__task_state is None
+                            else self.__task_state.task_modules.tm_obstacles
                         )
                     )
 
@@ -228,7 +222,8 @@ class TaskFactory(Namespaced):
                 self.__tm_robots = cls.registry_robots[tm_robots]()(props=self)
                 self.__param_tm_robots = tm_robots
 
-            def set_tm_obstacles(self, tm_obstacles: Constants.TaskMode.TM_Obstacles):
+            def set_tm_obstacles(
+                    self, tm_obstacles: Constants.TaskMode.TM_Obstacles):
                 """
                 Sets the task mode for obstacles.
 
@@ -238,7 +233,8 @@ class TaskFactory(Namespaced):
                 assert (
                     tm_obstacles in cls.registry_obstacles
                 ), f"TaskMode '{tm_obstacles}' for obstacles is not registered!"
-                self.__tm_obstacles = cls.registry_obstacles[tm_obstacles]()(props=self)
+                self.__tm_obstacles = cls.registry_obstacles[tm_obstacles]()(
+                    props=self)
                 self.__param_tm_obstacles = tm_obstacles
 
             def _reset_task(self, **kwargs):
@@ -258,12 +254,20 @@ class TaskFactory(Namespaced):
 
                     if not self._train_mode:
                         if (
-                            new_tm_robots := self.node.conf.TaskMode.TM_ROBOTS.value
+                            new_tm_robots := Constants.TaskMode.TM_Robots(
+                                rosparam_get(str, self.PARAM_TM_ROBOTS)
+                                if self.__task_state is None
+                                else self.__task_state.task_modules.tm_robots
+                            )
                         ) != self.__param_tm_robots:
                             self.set_tm_robots(new_tm_robots)
 
                         if (
-                            new_tm_obstacles := self.node.conf.TaskMode.TM_OBSTACLES.value
+                            new_tm_obstacles := Constants.TaskMode.TM_Obstacles(
+                                rosparam_get(str, self.PARAM_TM_OBSTACLES)
+                                if self.__task_state is None
+                                else self.__task_state.task_modules.tm_obstacles
+                            )
                         ) != self.__param_tm_obstacles:
                             self.set_tm_obstacles(new_tm_obstacles)
 
@@ -271,11 +275,13 @@ class TaskFactory(Namespaced):
                         module.before_reset()
 
                     self.__tm_robots.reset(**kwargs)
-                    obstacles, dynamic_obstacles = self.__tm_obstacles.reset(**kwargs)
+                    obstacles, dynamic_obstacles = self.__tm_obstacles.reset(
+                        **kwargs)
 
                     def respawn():
                         self.obstacle_manager.spawn_obstacles(obstacles)
-                        self.obstacle_manager.spawn_dynamic_obstacles(dynamic_obstacles)
+                        self.obstacle_manager.spawn_dynamic_obstacles(
+                            dynamic_obstacles)
 
                     self.obstacle_manager.respawn(respawn)
 
