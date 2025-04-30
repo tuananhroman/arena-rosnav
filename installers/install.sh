@@ -1,8 +1,8 @@
 #!/bin/bash -i
 set -e
 
-export ARENA_ROSNAV_REPO=${ARENA_ROSNAV_REPO:-voshch/arena-rosnav}
-export ARENA_BRANCH=${ARENA_BRANCH:-humble}
+export ARENA_ROSNAV_REPO=${ARENA_ROSNAV_REPO:-tuananhroman/arena-rosnav}
+export ARENA_BRANCH=${ARENA_BRANCH:-feature/hunav}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-humble}
 
 # == read inputs ==
