@@ -4,18 +4,16 @@ from task_generator.shared import DynamicObstacle, Obstacle
 
 class DummyEntityManager(EntityManager):
 
-    _logger_name = 'dummy_EM'
-
     def _spawn_obstacle_impl(
         self,
         obstacle,
-    ) -> Obstacle:
+    ) -> Obstacle | None:
         return obstacle
 
     def _spawn_dynamic_obstacle_impl(
         self,
         obstacle,
-    ) -> DynamicObstacle:
+    ) -> DynamicObstacle | None:
         return obstacle
 
     def _remove_obstacles_impl(
