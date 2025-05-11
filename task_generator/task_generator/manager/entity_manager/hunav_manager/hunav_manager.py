@@ -1,11 +1,13 @@
 import math
 import os
+import re
 import time
 import traceback
 import typing
 
 import attrs
-import geometry_msgs
+import geometry_msgs.msg
+from arena_rclpy_mixins.shared import Namespace
 from hunav_msgs.msg import Agent, AgentBehavior, Agents
 from hunav_msgs.srv import (ComputeAgent, ComputeAgents, GetAgents, MoveAgent,
                             ResetAgents)
@@ -14,7 +16,7 @@ from task_generator.manager.entity_manager.dummy_manager import \
     DummyEntityManager
 from task_generator.manager.entity_manager.hunav_manager import \
     HunavDynamicObstacle
-from task_generator.shared import DynamicObstacle, ModelType, Namespace
+from task_generator.shared import DynamicObstacle, ModelType
 from task_generator.simulators import BaseSimulator
 
 
@@ -74,9 +76,12 @@ class _PedestrianHelper:
 
         # Get workspace root
         def get_workspace_root():
-            current_dir = os.path.abspath(__file__)
-            workspace_root = current_dir
-            while not workspace_root.endswith("arena4_ws"):
+            workspace_root = os.environ.get('ARENA_WS_DIR', None)
+            if workspace_root is not None:
+                return workspace_root
+
+            workspace_root = os.path.abspath(__file__)
+            while not re.match('arena.*_ws', os.path.basename(workspace_root)):
                 workspace_root = os.path.dirname(workspace_root)
             return workspace_root
 
@@ -92,7 +97,6 @@ class _PedestrianHelper:
             'src/deps/hunav/hunav_sim/hunav_rviz2_panel/meshes/animations',
             animation_file
         )
-
 
         sdf = f"""<?xml version="1.0" ?>
         <sdf version="1.9">
@@ -269,35 +273,35 @@ class HunavManager(DummyEntityManager):
     def spawn_dynamic_obstacles(self, obstacles: typing.Collection[DynamicObstacle]):
         """Override to handle batch registration after all spawns"""
         self._logger.warn(f"=== SPAWNING {len(obstacles)} DYNAMIC OBSTACLES ===")
-        
+
         # Call parent method which handles individual spawns
         super().spawn_dynamic_obstacles(obstacles)
-        
+
         # Now all obstacles have been spawned - register them with HuNav
         if self._agents_container.agents:
             self._logger.warn(f"All spawns complete. Registering {len(self._agents_container.agents)} agents with HuNav")
-            
+
             # Update timestamp
             self._agents_container.header.stamp = self.node.get_clock().now().to_msg()
-            
+
             # Create request
             request = ComputeAgents.Request()
             request.robot = _create_robot_message()
             request.current_agents = self._agents_container
-            
+
             # Call HuNav service
             response = self._compute_agents_client.call(request)
-            
+
             if response:
                 self._logger.warn(f"Successfully registered {len(response.updated_agents.agents)} agents")
-                
+
                 # Update local agents with response data
                 for updated_agent in response.updated_agents.agents:
                     for i, agent in enumerate(self._agents_container.agents):
                         if agent.id == updated_agent.id:
                             self._agents_container.agents[i] = updated_agent
                             break
-                    
+
                     # Update pedestrians dictionary if exists
                     if updated_agent.id in self._pedestrians:
                         self._pedestrians[updated_agent.id]['agent'] = updated_agent
@@ -315,12 +319,12 @@ class HunavManager(DummyEntityManager):
                 unique_id = agent_number
             except (ValueError, IndexError):
                 unique_id = len(self._agents_container.agents) + 1
-            
+
             hunav_obstacle = HunavDynamicObstacle.from_dynamic_obstacle(obstacle)
             hunav_obstacle = attrs.evolve(hunav_obstacle, id=unique_id)
-            
+
             self._logger.info(f"Preparing agent {hunav_obstacle.name} (ID: {unique_id})")
-            
+
             # Create agent message
             agent_msg = Agent()
             agent_msg.id = unique_id
@@ -330,14 +334,14 @@ class HunavManager(DummyEntityManager):
             agent_msg.group_id = hunav_obstacle.group_id
             agent_msg.desired_velocity = hunav_obstacle.desired_velocity
             agent_msg.radius = hunav_obstacle.radius
-            
+
             # Set position
             agent_msg.position = geometry_msgs.msg.Pose()
             agent_msg.position.position.x = hunav_obstacle.init_pose.x
             agent_msg.position.position.y = hunav_obstacle.init_pose.y
             agent_msg.position.position.z = 1.250000
             agent_msg.yaw = hunav_obstacle.yaw
-            
+
             # Set behavior
             agent_msg.behavior = AgentBehavior()
             agent_msg.behavior.type = hunav_obstacle.behavior.type
@@ -350,7 +354,7 @@ class HunavManager(DummyEntityManager):
             agent_msg.behavior.obstacle_force_factor = hunav_obstacle.behavior.obstacle_force_factor
             agent_msg.behavior.social_force_factor = hunav_obstacle.behavior.social_force_factor
             agent_msg.behavior.other_force_factor = hunav_obstacle.behavior.other_force_factor
-            
+
             # Set goals
             agent_msg.goal_radius = hunav_obstacle.goal_radius
             agent_msg.cyclic_goals = hunav_obstacle.cyclic_goals
@@ -368,10 +372,10 @@ class HunavManager(DummyEntityManager):
                     goal.position.x = x
                     goal.position.y = y
                     agent_msg.goals.append(goal)
-            
+
             # Add wall obstacles
             agent_msg.closest_obs.extend(self._wall_points)
-            
+
             # After creating the agent message:
             self._logger.warn(f"""            ##Complete Debug for the set attributes
             Full HunavObstacle Details:
@@ -416,7 +420,7 @@ class HunavManager(DummyEntityManager):
 
             # Add to container - NO ComputeAgents call here!
             self._agents_container.agents.append(agent_msg)
-            
+
             # Store in pedestrians dictionary
             self._pedestrians[agent_msg.id] = {
                 'last_update': time.time(),
@@ -424,20 +428,25 @@ class HunavManager(DummyEntityManager):
                 'agent': agent_msg,
                 'animation_time': 0.0
             }
-            
+
             self._logger.info(f"Added agent {agent_msg.name} to container. Total agents: {len(self._agents_container.agents)}")
-            
+
             # Create visual model
             sdf = _PedestrianHelper.create_sdf(hunav_obstacle)
+
+            self._logger.info(f"created sdf for agent {agent_msg.name}")
+
             new_obstacle = attrs.evolve(
                 obstacle,
                 model=obstacle.model.override(
                     ModelType.SDF,
                     lambda model: model.replace(description=sdf), noload=True)
             )
-            
+
+            self._logger.info(f"created sdf for agent {agent_msg.name}")
+
             return new_obstacle
-            
+
         except Exception as e:
             self._logger.error(f"Error preparing agent: {str(e)}")
             self._logger.error(traceback.format_exc())
