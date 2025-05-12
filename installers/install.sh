@@ -2,7 +2,7 @@
 set -e
 
 export ARENA_ROSNAV_REPO=${ARENA_ROSNAV_REPO:-tuananhroman/arena-rosnav}
-export ARENA_BRANCH=${ARENA_BRANCH:-feature/hunav}
+export ARENA_BRANCH=${ARENA_BRANCH:-feature/hunav_working}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-humble}
 
 # == read inputs ==
