@@ -81,7 +81,7 @@ void HuNavSystemPluginIGN::Configure(const gz::sim::Entity& _entity, const std::
   std::string nodename = "hunav_plugin_node_" + std::to_string(_entity);
   this->rosnode_ = std::make_shared<rclcpp::Node>(nodename.c_str());
   //this->ros_test_pub_ = this->rosnode_->create_publisher<std_msgs::msg::String>("/gz/ros/paused", 10);
-
+  this->tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this->rosnode_);
   worldEntity_ = _entity; 
 
   // Print the number of entities in the world
@@ -346,31 +346,36 @@ void HuNavSystemPluginIGN::initializeAgents(gz::sim::EntityComponentManager& _ec
         gzerr << "Entity [" << agentEntity << "] is not an actor." << std::endl;
         return;
       }
-      if (actorComp->Data().AnimationCount() < 1)
-      {
-        gzerr << "Actor [" << actorComp->Data().Name()  << "] SDF doesn't have any animations." << std::endl;
-        return;
-      }
-      gzmsg << "Actor [" << actorComp->Data().Name()  << "] has " << actorComp->Data().AnimationCount() << " animations" << std::endl;
-      // we take and apply the first animation!!!!
-      auto ani = actorComp->Data().AnimationByIndex(0);
-      gzmsg << "Animation name: " << ani->Name() << std::endl;
-      gzmsg << "Animation filename: " << ani->Filename() << std::endl;
 
-      // Animation name
-      auto animNameComp = _ecm.Component<gz::sim::components::AnimationName>(agentEntity);
-      if(!animNameComp)
-      {
-        gzwarn << "AnimationName component does not exist. Creating..." << std::endl;
-        _ecm.SetComponentData<gz::sim::components::AnimationName>(agentEntity, ani->Name().c_str()); //DEF_WALKING_ANIMATION); //ani->Name().c_str());
-        //_ecm.SetChanged(entity, gz::sim::components::AnimationName::typeId, gz::sim::ComponentState::OneTimeChange);
-      }
-      else
-      {
-        *animNameComp = gz::sim::components::AnimationName(ani->Name().c_str()); //DEF_WALKING_ANIMATION); //ani->Name().c_str());
-        gzmsg << "Actor [" << actorComp->Data().Name()  << "] has animation name: " << animNameComp->Data() << std::endl;
-      }
-      _ecm.SetChanged(agentEntity, gz::sim::components::AnimationName::typeId, gz::sim::ComponentState::OneTimeChange);
+      // VERY IMPORTANT: Since we create in Arena our pedestrian sdfs directly with the according animation path, we have to comment this part out since the pedestrians 
+      // get spawned in Gazebo with animations already and this part of the original Plugin Code interferes with the entity component manager!
+      // When we change the usage of the plugin to a global way , this part of the code could be useful.  
+
+      // if (actorComp->Data().AnimationCount() < 1)
+      // {
+      //   gzerr << "Actor [" << actorComp->Data().Name()  << "] SDF doesn't have any animations." << std::endl;
+      //   return;
+      // }
+      // gzmsg << "Actor [" << actorComp->Data().Name()  << "] has " << actorComp->Data().AnimationCount() << " animations" << std::endl;
+      // // we take and apply the first animation!!!!
+      // auto ani = actorComp->Data().AnimationByIndex(0);
+      // gzmsg << "Animation name: " << ani->Name() << std::endl;
+      // gzmsg << "Animation filename: " << ani->Filename() << std::endl;
+
+      // // Animation name
+      // auto animNameComp = _ecm.Component<gz::sim::components::AnimationName>(agentEntity);
+      // if(!animNameComp)
+      // {
+      //   gzwarn << "AnimationName component does not exist. Creating..." << std::endl;
+      //   _ecm.SetComponentData<gz::sim::components::AnimationName>(agentEntity, ani->Name().c_str()); //DEF_WALKING_ANIMATION); //ani->Name().c_str());
+      //   //_ecm.SetChanged(entity, gz::sim::components::AnimationName::typeId, gz::sim::ComponentState::OneTimeChange);
+      // }
+      // else
+      // {
+      //   *animNameComp = gz::sim::components::AnimationName(ani->Name().c_str()); //DEF_WALKING_ANIMATION); //ani->Name().c_str());
+      //   gzmsg << "Actor [" << actorComp->Data().Name()  << "] has animation name: " << animNameComp->Data() << std::endl;
+      // }
+      // _ecm.SetChanged(agentEntity, gz::sim::components::AnimationName::typeId, gz::sim::ComponentState::OneTimeChange);
 
       // Animation time
       auto animTimeComp = _ecm.Component<gz::sim::components::AnimationTime>(agentEntity);
@@ -1040,7 +1045,7 @@ void HuNavSystemPluginIGN::updateGazeboPedestrians(gz::sim::EntityComponentManag
   // }
 
   // update the Gazebo actors
-  RCLCPP_INFO(rosnode_->get_logger(), "=== Updating %zu agents ===", _agents.agents.size());
+  RCLCPP_INFO(rosnode_->get_logger(), "=== Updating %zu agents ===", (_agents.agents.size()-1));
   for (const auto& a : _agents.agents)
   {
       RCLCPP_INFO(rosnode_->get_logger(), "Looking for agent: '%s'", a.name.c_str());
@@ -1127,6 +1132,24 @@ void HuNavSystemPluginIGN::updateGazeboPedestrians(gz::sim::EntityComponentManag
       _ecm.CreateComponent(entity, gz::sim::components::WorldPose(actorPose));
     }
 
+    // TF Broadcasting for the Childframe Ids especially
+    geometry_msgs::msg::TransformStamped tf_msg;
+    tf_msg.header.stamp = rosnode_->get_clock()->now();
+    tf_msg.header.frame_id = globalFrame_;  // 
+    tf_msg.child_frame_id = "agent_" + a.name;
+    
+    tf_msg.transform.translation.x = actorPose.Pos().X();
+    tf_msg.transform.translation.y = actorPose.Pos().Y();
+    tf_msg.transform.translation.z = actorPose.Pos().Z();
+    
+    
+    tf_msg.transform.rotation.x = actorPose.Rot().X();
+    tf_msg.transform.rotation.y = actorPose.Rot().Y();
+    tf_msg.transform.rotation.z = actorPose.Rot().Z();
+    tf_msg.transform.rotation.w = actorPose.Rot().W();
+    
+    // Publish the transform
+    tf_broadcaster_->sendTransform(tf_msg);
 
     // update the pedestrians' goals and behavior
     pedestrians_[entity].goals.clear();
