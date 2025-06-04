@@ -1,4 +1,5 @@
 from typing import Callable
+from typing import Callable
 
 
 def linear_decay(initial_value: float, final_value: float) -> Callable[[float], float]:

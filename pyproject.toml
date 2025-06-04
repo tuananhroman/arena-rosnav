@@ -6,6 +6,7 @@ description = ""
 authors = [
     "ReykCS <reyk-carstens@web.de>",
     "Volodymyr Shcherbyna <dev@vshch.com>",
+    "Tuan Anh Le <anh.maxiking@hotmail.de>",
 ]
 
 [tool.poetry.dependencies]
@@ -21,7 +22,7 @@ netifaces = "^0.11.0"
 watchdog = "^3.0.0"
 rosros = "^0.2.5"
 transforms3d = "^0.4.2"
-opencv-python = "^4.2.0"
+opencv-python-headless = "^4.2.0"
 attrs = "^24.2.0"
 shapely = "^2.0.6"
 numpy = "^1.25.4"
@@ -44,7 +45,7 @@ cvxpylayers = "^0.1.5"  #lflh
 mpi4py = "^3.1.4"       # cadrl, rlca
 tensorboardx = "^2.6"   # applr
 gym = "^0.22"           # applr, crowdnav, sarl, trail
-opencv-python = "^4.8"  # applr
+opencv-python-headless = "^4.8"  # applr
 
 
 # rosnav incl training toolchain

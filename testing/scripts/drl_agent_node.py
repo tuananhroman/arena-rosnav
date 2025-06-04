@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 import argparse
 import sys
-
 import rospy
 from geometry_msgs.msg import Twist
-from rosnav.srv import GetAction, GetActionRequest
+from rosgraph_msgs.msg import Clock
+from rosnav_rl.srv import GetAction, GetActionRequest
 from task_generator.shared import Namespace
 
-sys.modules["rl_agent"] = sys.modules["rosnav"]
+sys.modules["rl_agent"] = sys.modules["rosnav_rl"]
 
 
 ACTION_FREQUENCY = 5  # in Hz
@@ -25,9 +25,9 @@ class RosnavActionNode:
         rospy.loginfo(f"Starting Rosnav-Action-Node on {self.ns}")
 
         self._action_pub = rospy.Publisher(f"{self.ns}/cmd_vel", Twist, queue_size=1)
-        rospy.wait_for_service(f"{self.ns}/rosnav/get_action")
+        rospy.wait_for_service(f"{self.ns}/rosnav_rl/get_action")
         self._get_action_srv = rospy.ServiceProxy(
-            f"{self.ns}/rosnav/get_action", GetAction
+            f"{self.ns}/rosnav_rl/get_action", GetAction
         )
 
         frequency = rospy.get_param("action_frequency", ACTION_FREQUENCY)
