@@ -8,7 +8,9 @@ from rl_utils.cfg import (
     ProfilingCfg,
 )
 from rl_utils.envs.flatland_gymnasium_env import FlatlandEnv
-from rl_utils.envs.unity import UnityEnv
+import rl_utils.envs as arena_envs
+
+# from rl_utils.envs.unity import UnityEnv
 from rl_utils.stable_baselines3.vec_wrapper import (
     DelayedSubprocVecEnv,
     ProfilingVecEnv,
@@ -19,10 +21,8 @@ from stable_baselines3.common.utils import set_random_seed
 from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
 from stable_baselines3.common.vec_env.base_vec_env import VecEnv
 
-from task_generator.shared import Namespace
-from task_generator.utils import Utils
-
-from .constants import SIMULATION_NAMESPACES
+from rosnav_rl.utils.rostopic import Namespace
+from rl_utils.node import SupervisorNode
 
 
 def load_vec_framestack(stack_size: int, env: VecEnv) -> VecEnv:
@@ -49,15 +49,19 @@ def determine_env_class(simulator: Simulator) -> Union[gym.Env, gym.Wrapper]:
     Returns:
         Union[gym.Env, gym.Wrapper]: The environment class.
     """
+    return arena_envs.GazeboEnv
     if simulator == Simulator.FLATLAND:
-        return FlatlandEnv
-    elif simulator == Simulator.UNITY:
-        return UnityEnv
+        return arena_envs.FlatlandEnv
+    elif simulator == Simulator.GAZEBO:
+        return arena_envs.GazeboEnv
+    # elif simulator == Simulator.UNITY:
+    #     return UnityEnv
     else:
         raise RuntimeError(f"Simulator {simulator} is not supported.")
 
 
 def _init_env_fnc(
+    node: SupervisorNode,
     env_class: gym.Env,
     ns: Union[str, Namespace],
     space_manager: rosnav_rl.BaseSpaceManager,
@@ -73,6 +77,7 @@ def _init_env_fnc(
 
     def _init_env() -> Union[gym.Env, gym.Wrapper]:
         env = env_class(
+            node=node,
             ns=ns,
             space_manager=space_manager,
             reward_function=reward_function,
@@ -169,14 +174,15 @@ def sb3_wrap_env(
 
 
 def make_envs(
+    node: SupervisorNode,
     rl_agent: rosnav_rl.RL_Agent,
     simulation_state_container: rosnav_rl.SimulationStateContainer,
     n_envs: int,
     max_steps: int,
     init_env_by_call: bool,
-    namespace_fn: callable,
+    namespace_fn: Callable,  # Changed from callable
     wrappers: List[Callable[[Tuple[Type[gym.Wrapper], Any]], gym.Wrapper]] = None,
-) -> List[callable]:
+) -> List[Callable]:
     """
     Creates a list of environment initialization functions.
 
@@ -198,10 +204,15 @@ def make_envs(
     """
 
     def create_env_fnc(
-        ns: Union[str, Namespace], max_steps: int, init_env_by_call: bool
+        ns: Union[str, Namespace],
+        max_steps: int,
+        init_env_by_call: bool,
     ) -> callable:
         return _init_env_fnc(
-            env_class=determine_env_class(Utils.get_simulator()),
+            node=node,
+            env_class=determine_env_class(
+                None
+            ),  # Replace None with the desired simulator
             ns=ns,
             space_manager=rl_agent.space_manager,
             reward_function=rl_agent.reward_function.copy(),
@@ -212,8 +223,11 @@ def make_envs(
         )
 
     def create_env_fncs(
-        n_envs: int, ns_fn: callable, max_steps: int, init_env_by_call: bool
-    ) -> List[callable]:
+        n_envs: int,
+        ns_fn: Callable,
+        max_steps: int,
+        init_env_by_call: bool,  # Changed from callable
+    ) -> List[Callable]:
         return [
             create_env_fnc(
                 ns=ns_fn(idx),

@@ -1,11 +1,7 @@
 import os
-import time
-import warnings
 from typing import TYPE_CHECKING
 
-import rosnode
-import rospkg
-import rospy
+
 import yaml
 from pydantic import BaseModel
 from pygments import highlight
@@ -16,15 +12,7 @@ if TYPE_CHECKING:
     from rl_utils.trainer.arena_trainer import ArenaTrainer
 
 from rl_utils.utils.paths import PathDictionary, PathFactory
-
-
-def setup_node(node_name: str) -> None:
-    rospy.init_node(node_name, disable_signals=True)
-
-
-def setup_debug_node(debug_mode: bool, node_name: str = "debug_node") -> None:
-    if debug_mode:
-        setup_node(node_name)
+from ament_index_python.packages import get_package_share_directory
 
 
 def write_config_yaml(config: dict, path: str) -> None:
@@ -107,44 +95,6 @@ def create_tensorboard_directory(paths: dict, use_wandb: bool) -> str:
     return None
 
 
-def wait_for_nodes(
-    with_ns: bool, n_envs: int, timeout: int = 30, nodes_per_ns: int = 2
-) -> None:
-    """
-    Checks for timeout seconds if all nodes to corresponding namespace are online.
-
-    :param with_ns: (bool) if the system was initialized with namespaces
-    :param n_envs: (int) number of virtual environments
-    :param timeout: (int) seconds to wait for each ns
-    :param nodes_per_ns: (int) usual number of nodes per ns
-    """
-    if with_ns and n_envs < 1:
-        raise ValueError(f"Illegal number of environments parsed: {n_envs}")
-    elif not with_ns and n_envs != 1:
-        raise ValueError(
-            "Simulation setup isn't compatible with the given number of envs"
-        )
-
-    for i in range(n_envs):
-        ns = f"sim_{str(i + 1)}" if with_ns else ""
-        for k in range(timeout):
-            namespaces = rosnode.get_node_names(namespace=ns)
-
-            if len(namespaces) >= nodes_per_ns:
-                break
-
-            warnings.warn(
-                f"Check if all simulation parts of namespace '{ns}' are running properly"
-            )
-            warnings.warn("Trying to connect again..")
-            if k >= timeout - 1:
-                raise TimeoutError(
-                    f"Timeout while trying to connect to nodes of '{ns}'"
-                )
-
-            time.sleep(1)
-
-
 def load_config(file_path: str) -> dict:
     """
     Load config parameters from config file
@@ -154,10 +104,10 @@ def load_config(file_path: str) -> dict:
     return config
 
 
-def get_robot_yaml_path(robot_model: str = None) -> str:
-    robot_model = rospy.get_param(os.path.join(rospy.get_namespace(), "model"))
+def get_robot_yaml_path() -> str:
+    robot_model = "jackal"  # TODO: Fetch robot from parameter server
 
-    simulation_setup_path = rospkg.RosPack().get_path("arena_simulation_setup")
+    simulation_setup_path = get_package_share_directory("arena_simulation_setup")
     return os.path.join(
         simulation_setup_path, "entities", "robots", robot_model, f"model_params.yaml"
     )
@@ -169,6 +119,7 @@ def setup_paths_dictionary(
     trainer.paths = PathFactory.get_paths(trainer.config.agent_cfg.name)
     if not is_debug_mode:
         trainer.paths.create_all()
+
 
 def load_yaml(file_path: str) -> dict:
     with open(file_path) as file:

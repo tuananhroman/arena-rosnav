@@ -5,8 +5,9 @@ from functools import cached_property
 from pathlib import Path
 from typing import Dict, Optional, Type
 
-import rospkg
-import rospy
+from ament_index_python.packages import get_package_share_directory
+
+# import rospy
 
 __all__ = [
     "PathComponent",
@@ -26,9 +27,10 @@ __all__ = [
 class RosPackages:
     """Centralized ROS package paths"""
 
-    SIMULATION_SETUP: Path = Path(rospkg.RosPack().get_path("arena_simulation_setup"))
-    ROSNAV: Path = Path(rospkg.RosPack().get_path("rosnav_rl"))
-    ARENA_BRINGUP: Path = Path(rospkg.RosPack().get_path("arena_bringup"))
+    # TODO: Consider using a more dynamic approach to fetch package paths
+    SIMULATION_SETUP: Path = Path(get_package_share_directory("arena_simulation_setup"))
+    ROSNAV: Path = Path(get_package_share_directory("rosnav_rl"))
+    ARENA_BRINGUP: Path = Path(get_package_share_directory("arena_bringup"))
 
 
 class PathComponent(ABC):
@@ -129,7 +131,10 @@ class RobotSetting(PathComponent):
     """Robot setting paths"""
 
     def __init__(self, robot_model: Optional[str] = None):
-        self.robot_model = robot_model or rospy.get_param("robot_model")
+        # TODO: Consider fetching the default robot model from ROS parameters
+        self.robot_model = (
+            robot_model or "jackal"
+        )  # Default to 'jackal' if not specified
 
     @cached_property
     def path(self) -> Path:
