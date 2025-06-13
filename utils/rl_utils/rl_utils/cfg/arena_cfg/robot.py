@@ -1,6 +1,5 @@
 from typing import Dict, List, Optional
 
-import rospy
 from pydantic import BaseModel, Field
 from rl_utils.tools.general import get_robot_yaml_path, load_yaml
 
@@ -42,7 +41,7 @@ class RobotCfg(BaseModel):
     robot_description: Optional[RobotYamlCfg] = Field(
         alias="Robot Yaml Description",
         default_factory=lambda: RobotYamlCfg.model_validate(
-            load_yaml(get_robot_yaml_path(rospy.get_param("model")))
+            load_yaml(get_robot_yaml_path())
         ),
     )
     attach_full_range_laser: Optional[bool] = True

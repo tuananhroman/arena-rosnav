@@ -24,6 +24,27 @@ class TrainingCfg(BaseModel):
     # TODO: Maybe move this to a more general place - closer to the RobotCfg
     @model_validator(mode="after")
     def generate_custom_discrete_actions(self):
+        """
+        Generates custom discrete actions if specified in the agent configuration.
+
+        This method checks if a custom discretization for the action space is defined
+        in the agent's configuration (`self.agent_cfg.action_space.custom_discretization`)
+        and if robot configuration is available (`self.arena_cfg.robot`).
+
+        If both conditions are met, it generates a list of discrete actions using
+        the `generate_discrete_from_box_dict` method. This method takes the
+        linear range for continuous actions from the robot's description
+        (`self.arena_cfg.robot.robot_description.actions.continuous.linear_range`)
+        as input for both x and y linear velocity discretization.
+
+        The generated list of discrete actions (which are dictionaries) is then
+        used to update the robot's discrete action space
+        (`self.arena_cfg.robot.robot_description.actions.discrete`). Each action
+        dictionary is converted into a `DiscreteAction` object.
+
+        Returns:
+            self: The instance of the class, allowing for method chaining.
+        """
         if (
             self.agent_cfg.action_space.custom_discretization is not None
             and self.arena_cfg.robot is not None
