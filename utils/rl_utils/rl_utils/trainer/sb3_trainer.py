@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import rclpy
 import rl_utils.utils.paths as Paths
+from rl_utils.node import SupervisorNode
 from rl_utils.stable_baselines3.eval_callbacks.initialization import init_sb3_callbacks
 from rl_utils.tools.config import load_training_config
 from rl_utils.tools.constants import SIMULATION_NAMESPACES
@@ -66,6 +68,7 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def __init__(self, config: "arena_cfg.TrainingCfg") -> None:
         import rl_utils.cfg as arena_cfg
+
         assert isinstance(config.arena_cfg, arena_cfg.ArenaSB3Cfg), (
             f"Invalid configuration type: {type(config.arena_cfg)} "
             f"for {self.__framework}"
@@ -75,14 +78,14 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def _register_framework_specific_hooks(self) -> None:
         """Register framework specific hooks for training.
-        
+
         This method sets up the following hooks:
             - BEFORE_SETUP:
                 - Set the curriculum file parameter in the task generator server
                 - Set the current curriculum stage in the task generator server
             - AFTER_SETUP:
                 - Transfer weights from a source model if configured
-        
+
         The hooks are executed at specific stages during the training process.
         """
         TASK_GEN_SERVER_NODE = "task_generator_server"
@@ -127,15 +130,16 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def _setup_agent(self) -> None:
         """Initializes the reinforcement learning agent.
-        
-        This method creates an instance of the RL_Agent class using the 
-        configuration parameters specified in the config object and the 
+
+        This method creates an instance of the RL_Agent class using the
+        configuration parameters specified in the config object and the
         current agent state container.
-        
+
         Returns:
             None
         """
         import rosnav_rl
+
         self.agent = rosnav_rl.RL_Agent(
             agent_cfg=self.config.agent_cfg,
             agent_state_container=self.agent_state_container,
@@ -143,12 +147,12 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def _setup_environment(self) -> None:
         """Sets up the training environment.
-        
+
         This method performs the following steps:
             1. Creates the necessary environments.
             2. Sets up callbacks for the environment.
             3. Completes the model initialization using the training environment.
-        
+
         Returns:
             None
         """
@@ -158,23 +162,24 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def _create_environments(self) -> None:
         """Creates training and evaluation environments for the RL agent.
-        
+
         This method initializes the training and evaluation environments using the specified configurations.
         It first creates environment function factories for both training and evaluation environments
-        using the `make_envs` function. Then, it wraps these environments for compatibility with 
-        Stable Baselines 3 (SB3) using the `sb3_wrap_env` function. Finally, it sets up the environments 
+        using the `make_envs` function. Then, it wraps these environments for compatibility with
+        Stable Baselines 3 (SB3) using the `sb3_wrap_env` function. Finally, it sets up the environments
         for the agent and stores them in an SB3Environment container.
         The environments are configured with parameters from the trainer's config, including the number
         of environments, maximum steps per episode, and whether to initialize environments on call.
-        
+
         Returns:
             None
-        
+
         Note:
             Training environments use the TRAIN_NS namespace, while evaluation environments use EVAL_NS.
         """
-        
+
         train_env_fncs = make_envs(
+            node=self._supervisor_node,
             rl_agent=self.agent,
             n_envs=self.config.arena_cfg.general.n_envs,
             max_steps=self.config.arena_cfg.general.max_num_moves_per_eps,
@@ -183,6 +188,7 @@ class StableBaselines3Trainer(ArenaTrainer):
             simulation_state_container=self.simulation_state_container,
         )
         eval_env_fncs = make_envs(
+            node=self._supervisor_node,
             rl_agent=self.agent,
             n_envs=1,
             namespace_fn=lambda _: SIMULATION_NAMESPACES.EVAL_NS,
@@ -220,7 +226,7 @@ class StableBaselines3Trainer(ArenaTrainer):
             and self.config.arena_cfg.monitoring.wandb
         ):
             setup_wandb(
-                run_name=self.config.agent_cfg.name, 
+                run_name=self.config.agent_cfg.name,
                 group=self.config.agent_cfg.framework.algorithm.architecture_name,
                 config=self.config,
                 to_watch=[self.agent.model.model.policy],
@@ -237,22 +243,22 @@ class StableBaselines3Trainer(ArenaTrainer):
 
     def _complete_model_initialization(self, train_env: VecEnv) -> None:
         """Complete the initialization of the RL model.
-        
+
         This method sets up the tensorboard logging directory and checkpoint path for model resumption,
         then initializes the model with the provided training environment.
-        
+
         Args:
             train_env (VecEnv): The vectorized training environment to use for model initialization.
-        
+
         Returns:
             None
-        
+
         Note:
             - Tensorboard logs are disabled in debug mode.
             - Checkpoint path is only used when resuming training from a previous checkpoint.
             - After initialization, the training environment is attached to the model.
         """
-        
+
         tensorboard_log_path = (
             self.paths[Paths.AgentTensorboard].path
             if not self.config.arena_cfg.general.debug_mode
@@ -275,10 +281,18 @@ class StableBaselines3Trainer(ArenaTrainer):
 
 
 def main():
+    rclpy.init()
     config = load_training_config("sb_training_config.yaml")
-    
+
     trainer = StableBaselines3Trainer(config)
-    trainer.train()
+
+    try:
+        trainer.train()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        trainer.close()
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

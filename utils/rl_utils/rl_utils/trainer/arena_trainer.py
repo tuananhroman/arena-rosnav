@@ -1,15 +1,13 @@
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
 import rl_utils.cfg as arena_cfg
 import rl_utils.utils.paths as Paths
 import rosnav_rl
-import rospy
+from rl_utils.node import SupervisorNode
 from rl_utils.tools.general import (
     print_base_model,
-    setup_debug_node,
     setup_paths_dictionary,
     write_config_yaml,
 )
@@ -86,6 +84,9 @@ class ArenaTrainer(ABC):
         self._register_framework_specific_hooks()
         self._setup_trainer()
 
+    def _setup_supervisor_node(self):
+        self._supervisor_node = SupervisorNode(name="arena_trainer", config=self.config)
+
     @bind_hooks(
         before_stage=TrainingHookStages.BEFORE_SETUP,
         after_stage=TrainingHookStages.AFTER_SETUP,
@@ -97,7 +98,6 @@ class ArenaTrainer(ABC):
         2. Sets up agent state container
         3. Sets up the agent
         4. Sets up the environment
-        5. Sets up monitoring
 
         This method orchestrates the initialization process in a structured order
         to ensure all components are properly initialized before training.
@@ -162,20 +162,14 @@ class ArenaTrainer(ABC):
         default_hooks = {
             TrainingHookStages.BEFORE_SETUP: [
                 lambda _: print_base_model(self.config),
-                lambda _: setup_debug_node(self.is_debug_mode),
                 lambda _: setup_paths_dictionary(self, self.is_debug_mode),
                 lambda _: self._write_config(),
             ],
             TrainingHookStages.AFTER_SETUP: [
                 lambda _: self._set_resume_true(),
-                lambda _: self.simulation_state_container.distribute(),
+                # lambda _: self.simulation_state_container.distribute(),
             ],
             TrainingHookStages.BEFORE_TRAINING: [lambda _: self._setup_monitoring()],
-            TrainingHookStages.AFTER_TRAINING: [
-                lambda _: rospy.on_shutdown(
-                    lambda: self._save_model(checkpoint="last_model")
-                )
-            ],
         }
 
         for hook, callbacks in default_hooks.items():
@@ -244,8 +238,13 @@ class ArenaTrainer(ABC):
 
     @property
     def is_debug_mode(self):
-        return rospy.get_param("debug_mode", False)
+        return self._supervisor_node.get_parameter_or("debug_mode", False)
 
     @property
     def is_resume(self):
         return self.__resume
+
+    @property
+    def node(self) -> SupervisorNode:
+        """Return the supervisor node for this trainer."""
+        return self._supervisor_node
