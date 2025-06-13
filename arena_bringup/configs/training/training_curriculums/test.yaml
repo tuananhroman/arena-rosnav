@@ -1,0 +1,64 @@
+/**:
+  ros__parameters:
+  # Stage 1: Empty environment - basic navigation
+  - n_static_obstacles: [0, 0]
+    n_interactive_obstacles: [0, 0]
+    n_dynamic_obstacles: [0, 0]
+    models_static_obstacles: []
+    models_interactive_obstacles: []
+    models_dynamic_obstacles: []
+    goal_radius: 1.5
+    
+  # Stage 2: Few static obstacles
+  - n_static_obstacles: [2, 4]
+    n_interactive_obstacles: [0, 0]
+    n_dynamic_obstacles: [0, 0]
+    models_static_obstacles: [chair, table]
+    models_interactive_obstacles: []
+    models_dynamic_obstacles: []
+    goal_radius: 1.2
+    
+  # Stage 3: More static obstacles + first dynamic
+  - n_static_obstacles: [3, 5]
+    n_interactive_obstacles: [0, 0]
+    n_dynamic_obstacles: [1, 2]
+    models_static_obstacles: [chair, table, shelf]
+    models_interactive_obstacles: []
+    models_dynamic_obstacles: [actor1]
+    goal_radius: 1.0
+    
+  # Stage 4: Introduce interactive obstacles
+  - n_static_obstacles: [4, 6]
+    n_interactive_obstacles: [1, 2]
+    n_dynamic_obstacles: [2, 3]
+    models_static_obstacles: [chair, table, shelf, plant]
+    models_interactive_obstacles: [door]
+    models_dynamic_obstacles: [actor1]
+    goal_radius: 0.8
+    
+  # Stage 5: Mixed environment with multiple dynamics
+  - n_static_obstacles: [5, 8]
+    n_interactive_obstacles: [1, 3]
+    n_dynamic_obstacles: [3, 5]
+    models_static_obstacles: [chair, table, shelf, plant, box]
+    models_interactive_obstacles: [door, gate]
+    models_dynamic_obstacles: [actor1, actor2]
+    goal_radius: 0.6
+    
+  # Stage 6: High complexity environment
+  - n_static_obstacles: [6, 10]
+    n_interactive_obstacles: [2, 4]
+    n_dynamic_obstacles: [4, 7]
+    models_static_obstacles: [chair, table, shelf, plant, box, cabinet]
+    models_interactive_obstacles: [door, gate, barrier]
+    models_dynamic_obstacles: [actor1, actor2, actor3]
+    goal_radius: 0.4
+    
+  # Stage 7: Maximum difficulty
+  - n_static_obstacles: [8, 12]
+    n_interactive_obstacles: [3, 5]
+    n_dynamic_obstacles: [6, 10]
+    models_static_obstacles: [chair, table, shelf, plant, box, cabinet, desk]
+    models_interactive_obstacles: [door, gate, barrier, turnstile]
+    models_dynamic_obstacles: [actor1, actor2, actor3, actor4]
+    goal_radius: 0.3

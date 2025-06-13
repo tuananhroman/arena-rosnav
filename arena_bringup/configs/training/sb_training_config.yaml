@@ -13,7 +13,7 @@ agent_cfg:
   framework:
     name: stable_baselines3  # ML framework name used for training
     algorithm: # training algorithm configuration
-      architecture_name: AGENT_6  # neural network architecture identifier
+      architecture_name: AGENT_1  # neural network architecture identifier
       checkpoint: last_model  # checkpoint to load when resuming training (last_model or best_model)
       # transfer_weights:  # for transfer learning - uncomment to use
       #   source_dir: /home/tar/catkin_ws/src/planners/rosnav/agents/AGENT_5
@@ -133,6 +133,43 @@ arena_cfg:
     tm_modules: staged  # Task module setup (staged for curriculum learning)
     tm_obstacles: random  # Obstacle generation method (random placement)
     tm_robots: random  # Robot spawning method (random positions)
+
+    curriculum_definition:
+      # Stage 1: Empty environment - basic navigation
+      - n_static_obstacles: [0, 0]
+        n_interactive_obstacles: [0, 0]
+        n_dynamic_obstacles: [0, 0]
+        models_static_obstacles: []
+        models_interactive_obstacles: []
+        models_dynamic_obstacles: []
+        goal_radius: 1.5
+        
+      # Stage 2: Few static obstacles
+      - n_static_obstacles: [2, 4]
+        n_interactive_obstacles: [0, 0]
+        n_dynamic_obstacles: [0, 0]
+        models_static_obstacles: [chair, table]
+        models_interactive_obstacles: []
+        models_dynamic_obstacles: []
+        goal_radius: 1.2
+        
+      # Stage 3: More static obstacles + first dynamic
+      - n_static_obstacles: [3, 5]
+        n_interactive_obstacles: [0, 0]
+        n_dynamic_obstacles: [1, 2]
+        models_static_obstacles: [chair, table, shelf]
+        models_interactive_obstacles: []
+        models_dynamic_obstacles: [actor1]
+        goal_radius: 1.0
+        
+      # Stage 4: Introduce interactive obstacles
+      - n_static_obstacles: [4, 6]
+        n_interactive_obstacles: [1, 2]
+        n_dynamic_obstacles: [2, 3]
+        models_static_obstacles: [chair, table, shelf, plant]
+        models_interactive_obstacles: [door]
+        models_dynamic_obstacles: [actor1]
+        goal_radius: 0.8
 
   monitoring:
     wandb: # Weights and Biases logging configuration
