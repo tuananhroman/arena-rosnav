@@ -7,3 +7,13 @@ repositories:
     type: git
     url: https://github.com/ros/sdformat_urdf.git
     version: humble
+
+  deps/robots/turtlebot4:
+    type: git
+    url: https://github.com/turtlebot/turtlebot4.git
+    version: humble
+
+  gazebo/hunav_gz_plugin:
+    type: git
+    url: https://github.com/Arena-Rosnav/hunav_gz_plugin
+    version: main@1abd02b2

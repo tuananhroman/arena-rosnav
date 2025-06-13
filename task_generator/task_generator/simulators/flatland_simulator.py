@@ -4,10 +4,11 @@ import flatland_msgs.msg as flatland_msgs
 import flatland_msgs.srv as flatland_srvs
 import geometry_msgs.msg as geometry_msgs
 import std_srvs.srv as std_srvs
+from arena_rclpy_mixins.shared import Namespace
 from rosros import rospify as rospy
 
 from task_generator.constants.runtime import Configuration
-from task_generator.shared import ModelType, Namespace, rosparam_get
+from task_generator.shared import ModelType, rosparam_get
 from task_generator.simulators import BaseSimulator
 
 
@@ -123,22 +124,22 @@ class FlatlandSimulator(BaseSimulator):
         request.name = entity.name
         request.ns = Namespace(entity.name)
         request.pose = geometry_msgs.Pose2D(
-            x=entity.position.x, y=entity.position.y, theta=entity.position.orientation
+            x=entity.pose.position.x, y=entity.pose.position.y, theta=entity.pose.orientation
         )
 
         res = self.spawn_model(model.type, request)
 
         return res.success
 
-    def move_entity(self, name, position):
-        pose = geometry_msgs.Pose2D()
-        pose.x = position.x
-        pose.y = position.y
-        pose.theta = position.orientation
+    def move_entity(self, name, pose):
+        pose2 = geometry_msgs.Pose2D()
+        pose2.x = pose.position.x
+        pose2.y = pose.position.y
+        pose2.theta = pose.orientation.to_yaw()
 
         move_model_request = flatland_srvs.MoveModelRequest()
         move_model_request.name = name
-        move_model_request.pose = pose
+        move_model_request.pose = pose2
 
         self._move_model_srv(move_model_request)
 

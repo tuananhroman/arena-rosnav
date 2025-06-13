@@ -2,6 +2,7 @@
 import argparse
 import sys
 import rospy
+from arena_rclpy_mixins.shared import Namespace
 from geometry_msgs.msg import Twist
 from rosgraph_msgs.msg import Clock
 from rosnav_rl.srv import GetAction, GetActionRequest

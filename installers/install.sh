@@ -1,8 +1,20 @@
 #!/bin/bash -i
 set -e
 
+_RCFILE="${RCFILE:-$HOME/.$(ps -p $$ -o comm=)rc}"
+if [ -z "${RCFILE+x}" ]; then
+  echo "${_RCFILE}"
+  if [ ! -f "${_RCFILE}" ] ; then
+    echo RCFILE is not set, failed to autodetect
+    echo pass manually using 'RCFILE=/my/rcfile sh install.sh'
+    exit 1
+  else
+    echo "detected rcfile as ${_RCFILE}"
+  fi
+fi
+
 export ARENA_ROSNAV_REPO=${ARENA_ROSNAV_REPO:-tuananhroman/arena-rosnav}
-export ARENA_BRANCH=${ARENA_BRANCH:-feature/hunav_working}
+export ARENA_BRANCH=${ARENA_BRANCH:-update}
 export ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO:-humble}
 
 # == read inputs ==
@@ -41,13 +53,13 @@ fi
 # pyenv
 if [ ! -d "$HOME/.pyenv" ] ; then
   rm -rf "$HOME/.pyenv"
-  curl https://pyenv.run | bash
+  curl https://pyenv.run | "$(ps -p $$ -o comm=)"
   {     echo 'export PYENV_ROOT="$HOME/.pyenv"';
         echo '[[ -d $PYENV_ROOT/bin ]] && export PATH="$PYENV_ROOT/bin:$PATH"';
         echo 'eval "$(pyenv init -)"';
-  } >> ~/.bashrc
+  } >> "${_RCFILE}"
   
-  . ~/.bashrc
+  . "${_RCFILE}"
 
   # resourcing does not work in the same shell
   export PYENV_ROOT="$HOME/.pyenv"
@@ -61,9 +73,9 @@ fi
 if ! which poetry ; then
   echo "Installing Poetry...:"
   curl -sSL https://install.python-poetry.org | python3 -
-  if ! grep -q 'export PATH="$HOME/.local/bin"' ~/.bashrc; then
-    echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-    source ~/.bashrc
+  if ! grep -q 'export PATH="$HOME/.local/bin"' "${_RCFILE}"; then
+    echo 'export PATH="$HOME/.local/bin:$PATH"' >> "${_RCFILE}"
+    . "${_RCFILE}"
   fi
   "$HOME/.local/bin/poetry" config virtualenvs.in-project true
 fi
@@ -179,7 +191,7 @@ if [ ! -f src/ros2/compiled ] ; then
     git -c user.name='Arena' -c user.email='anonymous@arena-rosnav.org' cherry-pick 654d6f5658b59009147b9fad9b724919633f38fe || echo 'already cherry picked'
   popd
 
-  . src/arena/arena-rosnav/tools/colcon_build --paths src/ros2/* --packages-skip-build-finished
+  . src/arena/arena-rosnav/tools/colcon_build --paths src/ros2/*
   touch src/ros2/compiled
   
   # don't even ask
@@ -225,9 +237,9 @@ fi
 
 compile(){
   cd "${ARENA_WS_DIR}"
-  . colcon_build --packages-skip-build-finished #TODO get rid of this
+  . colcon_build #TODO get rid of this
   ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO} ros2 run arena_bringup pull
-  . colcon_build --packages-skip-build-finished
+  . colcon_build
 }
 
 compile

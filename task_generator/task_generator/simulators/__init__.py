@@ -1,10 +1,11 @@
 import itertools
 import typing
 
+from arena_rclpy_mixins.shared import Namespace
+
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import (Entity, ModelType, Namespace,
-                                   PositionOrientation, Wall)
+from task_generator.shared import Entity, ModelType, Pose, Wall
 from task_generator.utils.registry import Registry
 
 
@@ -55,7 +56,7 @@ class BaseSimulator(NodeInterface):
     def spawn_entity(self, entity: Entity) -> bool:
         raise NotImplementedError()
 
-    def move_entity(self, name: str, position: PositionOrientation) -> bool:
+    def move_entity(self, name: str, pose: Pose) -> bool:
         """
         Move entity to the given position.
         """

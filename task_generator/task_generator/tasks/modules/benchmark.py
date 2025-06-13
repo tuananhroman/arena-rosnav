@@ -1,38 +1,33 @@
 import datetime
 import hashlib
 import json
-import logging
-import os
 import pathlib
-import subprocess
-import typing
-
-import ament_index_python
-import arena_evaluation_msgs.srv
 import yaml
-
+import os
+import time
+import typing
+import rclpy
+from rclpy.node import Node
+from rclpy.parameter import Parameter
+from rcl_interfaces.srv import SetParameters, DescribeParameters
+from ament_index_python.packages import get_package_share_directory
+from std_srvs.srv import Empty as EmptySrv
 from task_generator.constants import Constants
-from task_generator.shared import Namespace, rosparam_get
+from task_generator.constants.runtime import Configuration
 from task_generator.tasks.modules import TM_Module
-
-
-def _get_rosmaster_pid() -> int:
-    try:
-        return int(subprocess.check_output(
-            ["ps", "-C", "rosmaster", "-o", "pid", "h"]).decode())
-    except Exception as e:
-        raise RuntimeError("could not determine rosmaster pid") from e
-
+from task_generator.tasks.task_factory import TaskFactory
+from arena_rclpy_mixins.ROSParamServer import ROSParamServer
+import logging
+from logging import FileHandler, StreamHandler, Formatter
+from rclpy.validate_full_topic_name import validate_full_topic_name
 
 class _Config(typing.NamedTuple):
-
     @classmethod
-    def parse(cls, obj: dict):
-        print(obj)
+    def parse(cls, obj: typing.Dict):
         return cls(
             suite=cls.Suite(**obj["suite"]),
             contest=cls.Contest(**obj["contest"]),
-            general=cls.General(**obj["general"])
+            general=cls.General(**obj["general"]),
         )
 
     class Suite(typing.NamedTuple):
@@ -49,22 +44,15 @@ class _Config(typing.NamedTuple):
     contest: Contest
     general: General
 
-
 class Suite(typing.NamedTuple):
-
     @classmethod
-    def parse(cls, name: str, obj: dict, default_timeout: float):
+    def parse(cls, name: str, obj: typing.Dict, config_class=None):
         return cls(
             name=name,
-            stages=[
-                cls.Stage.parse(stage, default_timeout=default_timeout)
-                for stage
-                in obj["stages"]
-            ]
+            stages=[cls.Stage.parse(stage, config_class) for stage in obj["stages"]]
         )
 
-    class Index(int):
-        ...
+    class Index(int): pass
 
     class Stage(typing.NamedTuple):
         name: str
@@ -73,33 +61,79 @@ class Suite(typing.NamedTuple):
         map: str
         tm_robots: Constants.TaskMode.TM_Robots
         tm_obstacles: Constants.TaskMode.TM_Obstacles
-        config: dict
-
+        config: typing.Dict
         seed: int
-        timeout: float
+        timeout: str
 
         @classmethod
-        def hash(cls, obj: dict) -> int:
-            """
-            hash json-serializable object to non-negative int32
-            """
-            return 0x7f_ff_ff_ff & int.from_bytes(
-                hashlib.sha1(json.dumps(obj).encode()).digest()[-4:],
-                byteorder="big"
-            )
+        def _make_serializable(cls, item):
+            if isinstance(item, dict):
+                return {k: cls._make_serializable(v) for k, v in item.items()}
+            elif isinstance(item, (list, tuple)):
+                return [cls._make_serializable(i) for i in item]
+            elif isinstance(item, (Constants.TaskMode.TM_Robots, Constants.TaskMode.TM_Obstacles)):
+                return item.value
+            elif hasattr(item, 'value'):
+                return cls._make_serializable(item.value)
+            elif hasattr(item, 'get_value'):
+                return cls._make_serializable(item.get_value())
+            elif hasattr(item, '__str__'):
+                logging.getLogger("benchmark").debug(f"Converting unknown type {type(item)} to str: {str(item)}")
+                return str(item)
+            return item
 
         @classmethod
-        def parse(
-            cls,
-            obj: dict,
-            default_timeout: float
-        ) -> "Suite.Stage":
-            obj.setdefault("timeout", default_timeout)
+        def hash(cls, obj: typing.Dict) -> int:
+            logger = logging.getLogger("benchmark")
+            hashable_obj = {k: v for k, v in obj.items() if k != "config"}
+            hashable_obj = cls._make_serializable(hashable_obj)
+            try:
+                return 0x7fffffff & int.from_bytes(
+                    hashlib.sha1(json.dumps(hashable_obj).encode()).digest()[-4:], byteorder="big"
+                )
+            except Exception as e:
+                logger.error(f"Hash failed: {e}, using fallback seed")
+                return 0
+
+        @classmethod
+        def parse(cls, obj: typing.Dict, config_class=None) -> "Suite.Stage":
+            if config_class is None:
+                raise ValueError("Configuration class must be provided")
+            logger = logging.getLogger("benchmark")
+            if "tm_robots" in obj:
+                if isinstance(obj["tm_robots"], str):
+                    try:
+                        obj["tm_robots"] = Constants.TaskMode.TM_Robots[obj["tm_robots"].upper()]
+                    except KeyError:
+                        logger.error(f"Invalid tm_robots value: {obj['tm_robots']}")
+                        raise
+                elif hasattr(obj["tm_robots"], 'value'):
+                    obj["tm_robots"] = Constants.TaskMode.TM_Robots[obj["tm_robots"].value.upper()]
+                elif hasattr(obj["tm_robots"], 'get_value'):
+                    obj["tm_robots"] = Constants.TaskMode.TM_Obstacles[obj["tm_robots"].get_value().upper()]
+                else:
+                    logger.error(f"Invalid tm_robots type: {type(obj['tm_robots'])}")
+                    raise ValueError(f"Invalid tm_robots type: {type(obj['tm_robots'])}")
+            if "tm_obstacles" in obj:
+                if isinstance(obj["tm_obstacles"], str):
+                    try:
+                        obj["tm_obstacles"] = Constants.TaskMode.TM_Obstacles[obj["tm_obstacles"].upper()]
+                    except KeyError:
+                        logger.error(f"Invalid tm_obstacles value: {obj['tm_obstacles']}")
+                        raise
+                elif hasattr(obj["tm_obstacles"], 'value'):
+                    obj["tm_obstacles"] = Constants.TaskMode.TM_Obstacles[obj["tm_obstacles"].value.upper()]
+                elif hasattr(obj["tm_obstacles"], 'get_value'):
+                    obj["tm_obstacles"] = Constants.TaskMode.TM_Obstacles[obj["tm_obstacles"].get_value().upper()]
+                else:
+                    logger.error(f"Invalid tm_obstacles type: {type(obj['tm_obstacles'])}")
+                    raise ValueError(f"Invalid tm_obstacles type: {type(obj['tm_obstacles'])}")
+            obj.setdefault("timeout", str(config_class.Robot.TIMEOUT))
             obj.setdefault("seed", cls.hash(obj))
             return cls(**obj)
 
     name: str
-    stages: list[Stage]
+    stages: typing.List[Stage]
 
     @property
     def min_index(self):
@@ -112,35 +146,29 @@ class Suite(typing.NamedTuple):
     def config(self, index: Index) -> Stage:
         return self.stages[index]
 
-
 class Contest(typing.NamedTuple):
-
     @classmethod
     def parse(cls, name: str, obj: dict):
         return cls(
             name=name,
-            contestants=[
-                cls.Contestant.parse(contestant)
-                for contestant
-                in obj["contestants"]
-            ]
+            contestants=[cls.Contestant.parse(contestant) for contestant in obj["contestants"]]
         )
 
-    class Index(int):
-        ...
+    class Index(int): pass
 
     class Contestant(typing.NamedTuple):
         name: str
         local_planner: str
         inter_planner: str
+        agent_name: str = ""
 
         @classmethod
-        def parse(cls, obj: dict) -> "Contest.Contestant":
-            obj.setdefault("inter_planner", "bypass")
+        def parse(cls, obj: typing.Dict) -> "Contestant":
+            obj.setdefault("inter_planner", "navigate_w_replanning_time")
             return cls(**obj)
 
     name: str
-    contestants: list[Contestant]
+    contestants: typing.List[Contestant]
 
     @property
     def min_index(self):
@@ -150,190 +178,242 @@ class Contest(typing.NamedTuple):
     def max_index(self) -> Index:
         return self.Index(len(self.contestants) - 1)
 
-    def config(self, index: Index) -> Contestant:
+    def config(self, index: int) -> Contestant:
         return self.contestants[index]
 
-
+@TaskFactory.register_module(Constants.TaskMode.TM_Module.BENCHMARK)
 class Mod_Benchmark(TM_Module):
-
-    DIR: Namespace = Namespace(
-        os.path.join(
-            ament_index_python.get_package_share_directory("arena_bringup"),
-            "configs",
-            "benchmark"
-        )
-    )
+    DIR = pathlib.Path(os.path.join(get_package_share_directory("arena_bringup"), "configs", "benchmark"))
     LOCK_FILE = "resume.lock"
-    LOG_DIR = DIR("logs")
-    TASK_GENERATOR_CONFIG = os.path.join(
-        ament_index_python.get_package_share_directory("arena_bringup"),
-        "configs",
-        "task_generator.yaml"
-    )
-    TASK_GENERATOR_CONFIG_BKUP = TASK_GENERATOR_CONFIG + ".bkup"
+    LOG_DIR = DIR / "logs"
+    PARAM_SET_TIMEOUT = 5.0
+    PARAM_SET_RETRIES = 3
+    PARAM_SET_BACKOFF = 2.0
+    RESET_RETRY_LIMIT = 5
+    RESET_RETRY_DELAY = 10.0
+    SERVICE_WAIT_TIMEOUT = 15.0
 
     _config: _Config
     _suite: Suite
     _contest: Contest
     _episode_index: int
-
     _runid: str
     _contest_index: Contest.Index
     _suite_index: Suite.Index
     _headless: int
-
-    _requires_restart: bool
-
-    # CONFIGURATION
+    _node: Node
+    _config_class: typing.Any
+    _primary_node: str
+    _logger_object: logging.Logger = None
 
     @classmethod
     def _load_config(cls) -> _Config:
-        with open(cls.DIR("config.yaml")) as f:
-            return _Config.parse(yaml.load(f, yaml.FullLoader))
+        with open(cls.DIR / "config.yaml") as f:
+            return _Config.parse(yaml.safe_load(f))
 
     @classmethod
     def _load_contest(cls, contest: str) -> Contest:
-        with open(cls.DIR("contests", contest)) as f:
-            return Contest.parse(pathlib.Path(contest).stem,
-                                 yaml.load(f, yaml.FullLoader))
+        with open(cls.DIR / "contests" / contest) as f:
+            return Contest.parse(pathlib.Path(contest).name.strip(".yaml"), yaml.safe_load(f))
 
     @classmethod
-    def _load_suite(cls, suite: str, default_timeout: float) -> Suite:
-        with open(cls.DIR("suites", suite)) as f:
-            return Suite.parse(
-                pathlib.Path(suite).stem, yaml.load(f, yaml.FullLoader),
-                default_timeout=default_timeout,
-            )
+    def _load_suite(cls, suite: str, config_class):
+        with open(cls.DIR / "suites" / suite) as f:
+            return Suite.parse(pathlib.Path(suite).name.strip(".yaml"), yaml.safe_load(f), config_class)
 
     @classmethod
-    def _resume(cls) -> tuple[str, Contest.Index, Suite.Index, int]:
-        with open(cls.DIR(cls.LOCK_FILE)) as f:
+    def _resume(cls):
+        with open(cls.DIR / cls.LOCK_FILE) as f:
             runid, contest, suite, headless = f.read().split(" ")
-        return runid, Contest.Index(contest), Suite.Index(suite), int(headless)
+            return runid, Contest.Index(contest), Suite.Index(suite), int(headless)
 
-    @classmethod
-    def _taskgen_backup(cls):
-        if os.path.exists(bkup_file := cls.TASK_GENERATOR_CONFIG + ".bkup"):
-            return
-        with open(cls.TASK_GENERATOR_CONFIG) as fr:
-            with open(bkup_file, "w") as fw:
-                fw.write(fr.read())
+    def _normalize_namespace(self, namespace: str) -> str:
+        """Normalize namespace by removing extra slashes and ensuring proper format."""
+        # Remove leading/trailing slashes and collapse multiple slashes
+        namespace = "/".join(filter(None, namespace.split("/")))
+        # Ensure single leading slash for absolute namespace
+        return f"/{namespace}" if namespace else "/task_generator_node"
 
-    @classmethod
-    def _taskgen_write(cls, *configs: dict):
+    def _validate_parameters(self, node_name, param_names):
+        logger = self._logger
+        clean_node_name = self._normalize_namespace(node_name)
+        service_name = f"{clean_node_name}/describe_parameters"
+        logger.debug(f"Creating client for service: {service_name}")
+        describe_client = self._node.create_client(DescribeParameters, service_name)
+        if not describe_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
+            logger.warning(f"DescribeParameters service not available for {clean_node_name}")
+            return []
+        request = DescribeParameters.Request()
+        request.names = param_names
+        try:
+            future = describe_client.call_async(request)
+            rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
+            if future.result():
+                valid_params = [desc.name for desc in future.result().descriptors]
+                logger.debug(f"Valid parameters for {clean_node_name}: {valid_params}")
+                return valid_params
+            else:
+                logger.warning(f"Failed to describe parameters for {clean_node_name}")
+                return []
+        except Exception as e:
+            logger.warning(f"Error validating parameters for {clean_node_name}: {e}")
+            return []
+        finally:
+            self._node.destroy_client(describe_client)
 
-        def overwrite(source: dict, target: dict):
-            for k, v in source.items():
-                if isinstance(v, dict):
-                    target.setdefault(k, dict())
-                    overwrite(v, target[k])
-                else:
-                    target[k] = v
-            return target
+    def _set_node_parameters(self, node_name, suite_config):
+        logger = self._logger
+        clean_node_name = self._normalize_namespace(node_name)
+        logger.debug(f"Setting parameters for {clean_node_name}")
 
-        with open(cls.TASK_GENERATOR_CONFIG, "r") as f:
-            joint_config = yaml.load(f, yaml.FullLoader)
+        # Declare parameters to avoid "not available" warnings
+        params_to_declare = [
+            ('tm_robots', Parameter.Type.STRING, suite_config.tm_robots.value),
+            ('tm_obstacles', Parameter.Type.STRING, suite_config.tm_obstacles.value)
+        ]
+        service_name = f"{clean_node_name}/set_parameters"
+        logger.debug(f"Creating client for service: {service_name}")
+        set_client = self._node.create_client(SetParameters, service_name)
+        if not set_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
+            logger.warning(f"SetParameters service not available for {clean_node_name}")
+            return False
 
-        for config in configs:
-            overwrite(config, joint_config)
+        success = True
+        for name, param_type, value in params_to_declare:
+            for attempt in range(self.PARAM_SET_RETRIES):
+                try:
+                    param = Parameter(name, param_type, value)
+                    request = SetParameters.Request()
+                    request.parameters = [param.to_parameter_msg()]
+                    future = set_client.call_async(request)
+                    rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
+                    if future.result() and all(r.successful for r in future.result().results):
+                        logger.info(f"Set parameter {name}={value} on {clean_node_name}")
+                        break
+                    else:
+                        logger.warning(f"Failed to set {name} on {clean_node_name}: {future.result().results[0].reason if future.result() else 'No result'}")
+                        time.sleep(self.PARAM_SET_BACKOFF)
+                except Exception as e:
+                    logger.warning(f"Error setting {name} on {clean_node_name} (attempt {attempt+1}/{self.PARAM_SET_RETRIES}): {e}")
+                    time.sleep(self.PARAM_SET_BACKOFF)
+            else:
+                logger.error(f"Failed to set {name} on {clean_node_name} after {self.PARAM_SET_RETRIES} attempts")
+                success = False
 
-        # yaml has problems with r+
-        with open(cls.TASK_GENERATOR_CONFIG, "w") as f:
-            yaml.dump(joint_config, f)
+        self._node.destroy_client(set_client)
+        return success
 
-    @classmethod
-    def _taskgen_restore(cls, cleanup: bool = False):
-        with open(cls.TASK_GENERATOR_CONFIG_BKUP) as fr:
-            with open(cls.TASK_GENERATOR_CONFIG, "w") as fw:
-                fw.write(fr.read())
-        if cleanup:
-            os.remove(cls.TASK_GENERATOR_CONFIG_BKUP)
+    def __init__(self, node: Node = None, task=None, **kwargs):
+        self._runid = f"t{int(time.time())}"
+        self._node = node
+        self._task = task
 
-    # RUNTIME
+        if node is None:
+            if not rclpy.ok():
+                rclpy.init()
+            node_name = f'benchmark_module_{int(time.time())}'
+            self._node = Node(node_name)
 
-    def __init__(self, **kwargs):
+        # Log detected task_generator_nodes
+        node_list = self._node.get_node_names_and_namespaces()
+        task_generator_nodes = [self._normalize_namespace(f"{ns}/{name}") for name, ns in node_list if name.startswith("task_generator_node")]
+        logger = self._logger
+        if len(task_generator_nodes) > 1:
+            logger.warning(f"Multiple task_generator_nodes detected: {task_generator_nodes}")
+        elif not task_generator_nodes:
+            logger.error("No task_generator_node found")
 
+        self._config_class = Configuration(ROSParamServer(f'benchmark_param_server_{int(time.time())}'))
         self._config = self._load_config()
-        self._suite = self._load_suite(
-            self._config.suite.config,
-            default_timeout=self.node.conf.Robot.TIMEOUT.value
-        )
+        self._suite = self._load_suite(suite=self._config.suite.config, config_class=self._config_class)
         self._contest = self._load_contest(self._config.contest.config)
+        self._episode_index = -1
+        self._contest_index = self._contest.min_index
+        self._suite_index = self._suite.min_index
+        self._headless = 1
+        self._primary_node = "/task_generator_node"
 
-        self._requires_restart = False
+        os.makedirs(self.LOG_DIR, exist_ok=True)
+        with open(self.LOG_DIR / f"{self._runid}.log", "w") as f:
+            f.write(f"run {self._runid}\n")
+            f.write(f"contest {self._contest.name}\n")
+            f.write(f"suite {self._suite.name}\n")
 
-        # first run
-        if not rosparam_get(bool, "benchmark_resume", False):
-            self._taskgen_backup()
-            self._runid = f"{self._contest.name}_{datetime.datetime.now().strftime('%y-%m-%d_%H-%M-%S')}"
-            self._contest_index = self._contest.min_index
-            self._suite_index = self._suite.min_index
-            self._headless = rosparam_get(int, "headless", 1)
-
-            self._taskgen_backup()
-            with open(self.TASK_GENERATOR_CONFIG_BKUP) as f:
-                base_config = f.read()
-
-            os.makedirs(self.LOG_DIR, exist_ok=True)
-            with open(self.LOG_DIR(f"{self._runid}.log"), "w") as f:
-                f.write(f"run {self._runid}\n")
-                f.write(f"of contest {self._contest.name} with {len(self._contest.contestants)} contestants\n")
-                f.write(f"on suite {self._suite.name} with {len(self._suite.stages)} stages\n")
-                f.write(f"total of {len(self._contest.contestants) * sum([int(self._config.suite.scale_episodes * self._suite.config(Suite.Index(index)).episodes) for index in range(self._suite.min_index, self._suite.max_index + 1)])} episodes\n")
-                f.write("\n")
-                f.write(f"Simulator: {self._config.general.simulator}\n")
-                f.write(f"Base Config: {json.dumps(base_config)}\n")
-                f.write(80 * "=" + "\n")
-                f.write("\n")
-
-            self._log_contest()
-            self._log_suite()
-
-            self._requires_restart = True
-            self._reincarnate()
-        else:
-            self._runid, contest_index, suite_index, headless = self._resume()
-
-            self._contest_index, self._suite_index, self._headless = contest_index, suite_index, headless
-            self._episode = -1
+        self._log_contest()
+        self._log_suite()
+        self._reincarnate()
 
     def before_reset(self):
-        pass
+        self._logger.debug("Before task reset")
 
     def after_reset(self):
-        self._episode += 1
+        self._logger.debug(f"Episode: {self._episode_index + 1}")
+        self._episode_index += 1
+        episode_limit = int(self._suite.config(self._suite_index).episodes * self._config.suite.scale_episodes)
+        if self._episode_index < episode_limit - 1:
+            self._reset_task()
+        else:
+            self._episode_index = -1
+            self.suite_index += 1
 
-    _logger_object: logging.Logger
+    def _reset_task(self, primary_node: str = None):
+        logger = self._logger
+        primary_node = self._normalize_namespace(primary_node or self._primary_node)
+        logger.debug(f"Attempting task reset on {primary_node}")
+        service_name = f"{primary_node}/reset_task"
+        
+        # Validate service name
+        try:
+            validate_full_topic_name(service_name, is_service=True)
+        except rclpy.exceptions.InvalidServiceNameException as e:
+            logger.error(f"Invalid service name: {service_name}. Error: {str(e)}")
+            return False
+        
+        reset_task_client = self._node.create_client(EmptySrv, service_name)
+        if not reset_task_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
+            logger.warning(f"Service {service_name} not available")
+            return False
+        request = EmptySrv.Request()
+        try:
+            future = reset_task_client.call_async(request)
+            rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
+            if future.result():
+                logger.info(f"Task reset successfully on {service_name}")
+                return True
+            else:
+                logger.warning(f"Task reset failed on {service_name}")
+                return False
+        except Exception as e:
+            logger.warning(f"Reset task failed on {service_name}: {e}")
+            return False
+        finally:
+            self._node.destroy_client(reset_task_client)
 
     @property
     def _logger(self) -> logging.Logger:
-        if not hasattr(self, "_logger_object"):
-            handler = logging.FileHandler(self.LOG_DIR(f"{self._runid}.log"))
-            handler.setFormatter(logging.Formatter('%(created)f: %(message)s'))
-
+        if self._logger_object is None:
+            handler = FileHandler(self.LOG_DIR / f"{self._runid}.log")
+            handler.setFormatter(Formatter("%(asctime)s: %(levelname)s: %(message)s"))
+            console_handler = StreamHandler()
+            console_handler.setFormatter(Formatter("%(asctime)s: %(levelname)s: %(message)s"))
             logger = logging.getLogger("benchmark")
             logger.setLevel(logging.DEBUG)
             logger.addHandler(handler)
-
+            logger.addHandler(console_handler)
             self._logger_object = logger
-
         return self._logger_object
 
     def _log_contest(self):
-        self._logger.info(f"\tC [{1 + self.contest_index:0>{len(str(1 + self._contest.max_index))}}/{1 + self._contest.max_index}] {self._contest.config(self._contest_index).name}")
+        self._logger.info(f"C [{1+self._contest_index}/{1+self._contest.max_index}] {self._contest.config(self._contest_index).name}")
 
     def _log_suite(self):
-        self._logger.info(f"\t\tS [{1 + self.suite_index:0>{len(str(1 + self._suite.max_index))}}/{1 + self._suite.max_index}] {self._suite.config(self._suite_index).name}")
+        self._logger.info(f"S [{1+self._suite_index}/{1+self._suite.max_index}] {self._suite.config(self._suite_index).name}")
 
     def _log_episode(self):
-        if self._episode < 0:
-            return  # pre-init
-        episode_limit = int(
-            self._suite.config(
-                self._suite_index).episodes *
-            self._config.suite.scale_episodes)
-        self._logger.info(
-            f"\t\t\tE [{1 + self._episode:0>{len(str(episode_limit))}}/{episode_limit}]")
+        if self._episode_index < 0:
+            return
+        episode_limit = int(self._suite.config(self._suite_index).episodes * self._config.suite.scale_episodes)
+        self._logger.info(f"E [{1+self._episode_index}/{episode_limit}]")
 
     @property
     def contest_index(self) -> Contest.Index:
@@ -342,18 +422,10 @@ class Mod_Benchmark(TM_Module):
     @contest_index.setter
     def contest_index(self, index: int):
         self._contest_index = Contest.Index(index)
-
         if self._contest_index > self._contest.max_index:
-            self._logger.info("BENCHMARK COMPLETED SUCCESSFULLY")
-            os.remove(self.DIR(self.LOCK_FILE))
-            self._taskgen_restore(cleanup=True)
-            self._suicide()
+            self._logger.info("Benchmark completed")
         else:
             self._log_contest()
-
-            self._logger.debug(f"contestant change requires restart")
-            self._requires_restart = True
-
             self._reincarnate()
 
     @property
@@ -362,26 +434,12 @@ class Mod_Benchmark(TM_Module):
 
     @suite_index.setter
     def suite_index(self, index: int):
-
-        old_config = self._suite.config(self._suite_index)
         self._suite_index = Suite.Index(index)
-
         if self._suite_index > self._suite.max_index:
             self._suite_index = self._suite.min_index
             self.contest_index += 1
         else:
             self._log_suite()
-
-            new_config = self._suite.config(self._suite_index)
-
-            if new_config.map != old_config.map:
-                self._logger.debug(f"map change requires restart")
-                self._requires_restart = True
-
-            if new_config.robot != old_config.robot:
-                self._logger.debug(f"robot change requires restart")
-                self._requires_restart = True
-
             self._reincarnate()
 
     @property
@@ -390,80 +448,30 @@ class Mod_Benchmark(TM_Module):
 
     @_episode.setter
     def _episode(self, episode: int):
-        if episode >= int(self._suite.config(
-                self._suite_index).episodes * self._config.suite.scale_episodes):
-            self._episode_index = 0
+        episode_limit = int(self._suite.config(self._suite_index).episodes * self._config.suite.scale_episodes)
+        if episode >= episode_limit:
+            self._episode_index = -1
             self.suite_index += 1
         else:
             self._episode_index = episode
             self._log_episode()
 
     def _reincarnate(self):
-
-        with open(self.DIR(self.LOCK_FILE), "w") as f:
-            f.write(f"{self._runid} {self._contest_index} {self._suite_index} {self._headless}")
-
-        config = self._config
-        contest_config = self._contest.config(self._contest_index)
+        logger = self._logger
+        logger.debug("Starting reincarnation process")
         suite_config = self._suite.config(self._suite_index)
-
-        self._taskgen_restore()
-        self._taskgen_write(
-            {
-                "episodes": -1,
-                "RANDOM": {
-                    "seed": suite_config.seed ^ Suite.Stage.hash({"": self._runid})
-                }
-            },
-            suite_config.config
-        )
-
-        record_data_dir = f"{self._runid}/{contest_config.name}/{suite_config.name}"
-
-        if False and self._requires_restart:
-            self._logger.info(f"{_get_rosmaster_pid()}")
-            subprocess.Popen(
-                [
-                    os.path.join(
-                        ament_index_python.get_package_share_directory(
-                            "task_generator"),
-                        "scripts",
-                        "delay_restart.py"
-                    ),
-                    f"{_get_rosmaster_pid()}",
-                    "arena_bringup",
-                    "start_arena.launch",
-                    "tm_modules:=benchmark",
-                    "benchmark_resume:=true",
-                    "record_data:=true",
-                    f"record_data_dir:={record_data_dir}",
-
-                    f"simulator:={config.general.simulator}",
-                    f"timeout:={suite_config.timeout}",
-                    f"headless:={self._headless}",
-
-                    # contest
-                    f"inter_planner:={contest_config.inter_planner}",
-                    f"local_planner:={contest_config.local_planner}",
-
-                    # suite
-                    f"model:={suite_config.robot}",
-                    f"world:={suite_config.map}",
-                    f"tm_robots:={suite_config.tm_robots}",
-                    f"tm_obstacles:={suite_config.tm_obstacles}"
-                ],
-                start_new_session=True
-            )
-            self._suicide()
-
-        else:
-            rospy.ServiceProxy(
-                f"/{suite_config.robot}/change_directory",
-                arena_evaluation_msgs.srv.ChangeDirectory).call(
-                arena_evaluation_msgs.srv.ChangeDirectoryRequest(record_data_dir))
-            self._episode = 0
-
-    def _suicide(self):
-        return
-        # subprocess.run(["kill", f"{_get_rosmaster_pid()}"])
-        # rospy.signal_shutdown("goodbye cruel world")
+        logger.info(f"Transitioning to stage: {suite_config.name} (tm_robots={suite_config.tm_robots.value}, tm_obstacles={suite_config.tm_obstacles.value})")
+        node_list = self._node.get_node_names_and_namespaces()
+        task_generator_nodes = [self._normalize_namespace(f"{ns}/{name}") for name, ns in node_list if name.startswith("task_generator_node")]
+        logger.debug(f"Detected task_generator_nodes: {task_generator_nodes}")
+        success = False
+        for tg_node in task_generator_nodes or [self._primary_node]:
+            if self._set_node_parameters(tg_node, suite_config):
+                logger.info(f"Stage setup complete for {suite_config.name} on {tg_node}")
+                self._primary_node = tg_node
+                success = True
+                break
+        if not success:
+            logger.error(f"Failed to set parameters for {suite_config.name} on any task_generator_node")
+        self._reset_task()
+        self._episode = 0

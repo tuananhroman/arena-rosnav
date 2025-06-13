@@ -6,6 +6,7 @@ import tempfile
 import time
 import typing
 
+import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import launch
 import launch.launch_service
 import launch_ros.actions
@@ -39,17 +40,18 @@ class ConfigFileGenerator(Node):
         @timeout: timeout in seconds
         """
         while True:
-            req = rcl_interfaces.srv.GetParameters.Request(names=[param_name])
-            future = client.call_async(req)
-            rclpy.spin_until_future_complete(self, future, timeout_sec=timeout)
-            params = future.result()
-            if params and params.values:
-                value = params.values[0]
-                if (not test_fn) or test_fn(value):
-                    self.get_logger().info(f'param {param_name} is set')
-                    return value
             self.get_logger().info(f'waiting for {param_name} to be set')
-            time.sleep(timeout)
+            for _ in range(5):
+                req = rcl_interfaces.srv.GetParameters.Request(names=[param_name])
+                future = client.call_async(req)
+                rclpy.spin_until_future_complete(self, future, timeout_sec=timeout)
+                params = future.result()
+                if params and params.values:
+                    value = params.values[0]
+                    if (not test_fn) or test_fn(value):
+                        self.get_logger().info(f'param {param_name} is set')
+                        return value
+                time.sleep(timeout)
 
     def __init__(self, TASKGEN_NODE: str = '/task_generator_node'):
         Node.__init__(self, 'rviz_config_generator')
@@ -73,8 +75,67 @@ class ConfigFileGenerator(Node):
 
         # self.cli_load = self.create_client('/rviz2/load_config', rcl_interfaces.srv.SetString)
 
+    def _create_pedestrian_group(self):
+        """Creates a Pedestrian Group with stylized human visualizations"""
+
+        pedestrian_group = {
+            'Class': 'rviz_common/Group',
+            'Name': 'Pedestrians',
+            'Enabled': True,
+            'Displays': []
+        }
+
+        # Check if pedestrian topics exist
+        pedestrian_topics = []
+        for topic_name, topic_types in self.topics:
+            # Check for namespaced people topics
+            if topic_name.endswith('/people') and 'people_msgs/msg/People' in topic_types:
+                pedestrian_topics.append((topic_name, 'people_msgs/msg/People'))
+            elif topic_name.endswith('/human_states') and 'hunav_msgs/msg/Agents' in topic_types:
+                pedestrian_topics.append((topic_name, 'hunav_msgs/msg/Agents'))
+            elif topic_name.endswith('/pedestrian_markers') and 'visualization_msgs/msg/MarkerArray' in topic_types:
+                pedestrian_topics.append((topic_name, 'visualization_msgs/msg/MarkerArray'))
+
+        if not pedestrian_topics:
+            self.get_logger().info("No pedestrian topics found. Pedestrian group will be empty.")
+            return pedestrian_group
+
+        # Add displays for found pedestrian topics
+        for topic_name, topic_type in pedestrian_topics:
+            if topic_type == 'visualization_msgs/msg/MarkerArray':
+                # Use MarkerArray display for converted pedestrian markers
+                display = Utils.Displays.pedestrians(topic_name)
+                pedestrian_group['Displays'].append(display)
+                self.get_logger().info(f"Added MarkerArray display for pedestrians: {topic_name}")
+
+            elif topic_type == 'people_msgs/msg/People':
+                # Add raw people display as fallback
+                display = Utils.Displays.pedestrians_raw(topic_name)
+                pedestrian_group['Displays'].append(display)
+                self.get_logger().info(f"Added raw People display: {topic_name}")
+
+            elif topic_type == 'hunav_msgs/msg/Agents':
+                # Could add custom agent display here if needed
+                self.get_logger().info(f"Found HuNav agents topic: {topic_name} (not yet implemented)")
+
+        # Add TF display for pedestrian frames (disabled fallback only)
+        tf_display = {
+            'Class': 'rviz_default_plugins/TF',
+            'Name': 'Pedestrian TF Frames',
+            'Enabled': False,  # Disabled by default since we have proper markers
+            'Frame Timeout': 15,
+            'Marker Scale': 0.3,
+            'Show Arrows': True,
+            'Show Axes': False,
+            'Show Names': True,
+            # No static tree - frames will be discovered dynamically by RViz
+        }
+        pedestrian_group['Displays'].append(tf_display)
+
+        return pedestrian_group
+
     def create_config(self) -> str:
-        default_file = ConfigFileGenerator._read_default_file()
+        default_file = self._read_default_file()
 
         # cache
         self.topics = self.get_topic_names_and_types()
@@ -114,6 +175,10 @@ class ConfigFileGenerator(Node):
         for robot_name in self.robot_names:
             robot_group = self._create_robot_group(robot_name)
             displays.append(robot_group)
+
+        # HUNAVSIM: pedestrian group
+        pedestrian_group = self._create_pedestrian_group()
+        displays.append(pedestrian_group)
 
         # PedSim configuration - commented out but kept for future use
         # try:
@@ -180,7 +245,8 @@ class ConfigFileGenerator(Node):
         }
 
         # Add robot model using RobotModel display
-        robot_group['Displays'].append(Utils.Displays.robot_model(robot_name))
+        robot_model_topic = f'{self._TASKGEN_NODE}/{robot_name}/robot_description'
+        robot_group['Displays'].append(Utils.Displays.robot_model(topic=robot_model_topic, robot_name=robot_name))
 
         # Add odometry visualization
         odom_topic = f'{self._TASKGEN_NODE}/{robot_name}/odom'
@@ -275,13 +341,15 @@ class ConfigFileGenerator(Node):
 
         return robot_group
 
-    @staticmethod
-    def _read_default_file():
+    def _read_default_file(self):
         package_path = get_package_share_directory("rviz_utils")
         file_path = os.path.join(package_path, "config", "rviz_default.rviz")
 
         with open(file_path) as file:
-            return yaml.safe_load(file)
+            content = file.read()
+            # i'm lazy, bite me
+            content = content.format(task_generator_node=self._TASKGEN_NODE)
+            return yaml.safe_load(content)
 
     @classmethod
     def _tmp_config_file(cls, config_file):
@@ -301,6 +369,9 @@ def main():
         launch_service = launch.launch_service.LaunchService()
         launch_service.include_launch_description(
             launch.LaunchDescription([
+                NodeLogLevelExtension.SetGlobalLogLevelAction(
+                    rclpy.logging.get_logger_effective_level(config_file_generator.get_logger().name).name.lower()
+                ),
                 launch_ros.actions.Node(
                     package="rviz2",
                     executable="rviz2",

@@ -5,16 +5,18 @@ import xml.etree.ElementTree as ET
 from io import StringIO
 from typing import Any, Optional, Union
 
+import arena_simulation_setup
 import attrs
 import cv2
 import numpy as np
 import yaml
+from arena_rclpy_mixins.shared import Namespace
 
 import task_generator.utils.arena as Utils
 from task_generator.constants import Constants
 from task_generator.manager.world_manager.utils import WorldMap, WorldOccupancy
-from task_generator.shared import (Model, ModelType, ModelWrapper, Namespace,
-                                   Obstacle, PositionOrientation, rosparam_get)
+from task_generator.shared import (Model, ModelType, ModelWrapper, Obstacle,
+                                   Pose, Position, rosparam_get)
 
 
 class SDFUtil:
@@ -221,7 +223,7 @@ class YAMLUtil:
 
 
 tmp_dir = os.path.join(
-    Utils.get_simulation_setup_path(), "tmp", "heightmap"
+    arena_simulation_setup.ass_dir, "tmp", "heightmap"
 )
 os.makedirs(tmp_dir, exist_ok=True)
 
@@ -306,7 +308,7 @@ def walls_to_obstacle(world_map: WorldMap, height: float = 3) -> Obstacle:
     )
 
     return Obstacle(
-        position=PositionOrientation(0, 0, 0),
+        pose=Pose(),
         name=model_name,
         model=model,
         extra=dict(),

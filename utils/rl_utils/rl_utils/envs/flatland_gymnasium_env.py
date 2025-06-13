@@ -2,26 +2,35 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import gymnasium
 import numpy as np
-
+import rospy
+from arena_rclpy_mixins.shared import Namespace
+from flatland_msgs.msg import StepWorld
 from geometry_msgs.msg import Twist
-from rl_utils.utils.type_alias.observation import InformationDict
-from rosnav_rl.observations import (
-    DoneObservation,
-    FullRangeLaserCollector,
-    ObservationManager,
-    get_required_observation_units,
+from rl_utils.utils.observation_collector.constants import DONE_REASONS
+from rl_utils.utils.observation_collector.observation_manager import ObservationManager
+from rl_utils.utils.observation_collector.observation_units.base_collector_unit import (
+    BaseCollectorUnit,
 )
-from rosnav_rl.reward.reward_function import RewardFunction
-from rosnav_rl.spaces import BaseSpaceManager
-from rosnav_rl.states import SimulationStateContainer
-from rosnav_rl.utils.rostopic import Namespace
-from rosnav_rl.utils.type_aliases import EncodedObservationDict, ObservationDict
+from rl_utils.utils.observation_collector.observation_units.globalplan_collector_unit import (
+    GlobalplanCollectorUnit,
+)
+from rl_utils.utils.observation_collector.observation_units.semantic_ped_unit import (
+    SemanticAggregateUnit,
+)
+from rl_utils.utils.rewards.reward_function import RewardFunction
+from rosnav.model.base_agent import BaseAgent
+from rosnav.rosnav_space_manager.rosnav_space_manager import RosnavSpaceManager
 from std_srvs.srv import Empty
 
 from task_generator.task_generator_node import TaskGenerator
-from task_generator.tasks import Task
 
-from .utils import determine_termination
+
+def get_ns_idx(ns: str):
+    try:
+        return int(re.search(r"\d+", ns)[0])
+    except Exception:
+        return random.uniform(0, 3)
+        # return 0.5
 
 
 class FlatlandEnv(gymnasium.Env):

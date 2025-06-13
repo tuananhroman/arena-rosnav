@@ -1,25 +1,22 @@
-import os
 import typing
 
+import arena_simulation_setup
 import rclpy
 import rosgraph_msgs.msg as rosgraph_msgs
 import std_msgs.msg as std_msgs
+from arena_rclpy_mixins.shared import DefaultParameter, Namespace
 
-import task_generator.utils.arena as Utils
 from task_generator import NodeInterface
 from task_generator.constants import Constants
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.manager.robot_manager.robots_manager_ros import \
     RobotsManager
 from task_generator.manager.world_manager.world_manager_ros import WorldManager
-from task_generator.shared import (DefaultParameter, Namespace,
-                                   PositionOrientation, rosparam_set)
+from task_generator.shared import Pose, rosparam_set
 from task_generator.tasks import Namespaced, Task
 from task_generator.tasks.modules import TM_Module
 from task_generator.tasks.obstacles import TM_Obstacles
 from task_generator.tasks.robots import TM_Robots
-from task_generator.utils import ModelLoader
-
 # import training.srv as training_srvs
 
 
@@ -158,21 +155,6 @@ class TaskFactory(Namespaced):
 
                 robots_manager.set_up()
 
-                self.model_loader = ModelLoader(
-                    os.path.join(
-                        Utils.get_simulation_setup_path(),
-                        'entities',
-                        'obstacles',
-                        'static')
-                )
-                self.dynamic_model_loader = ModelLoader(
-                    os.path.join(
-                        Utils.get_simulation_setup_path(),
-                        'entities',
-                        'obstacles',
-                        'dynamic')
-                )
-
                 self.__param_tm_obstacles = None
                 self.__param_tm_robots = None
                 self.__modules = [
@@ -243,8 +225,7 @@ class TaskFactory(Namespaced):
                         module.before_reset()
 
                     self.__tm_robots.reset(**kwargs)
-                    obstacles, dynamic_obstacles = self.__tm_obstacles.reset(
-                        **kwargs)
+                    obstacles, dynamic_obstacles = self.__tm_obstacles.reset(**kwargs)
 
                     def respawn():
                         self.environment_manager.spawn_obstacles(obstacles)
@@ -259,6 +240,7 @@ class TaskFactory(Namespaced):
 
                 except Exception as e:
                     self.node.get_logger().error(repr(e))
+                    raise
                     rclpy.shutdown()
                     raise Exception("reset error!") from e
 
@@ -304,10 +286,7 @@ class TaskFactory(Namespaced):
                     **kwargs: Arbitrary keyword arguments.
                 """
                 self._force_reset = False
-                if self._train_mode:
-                    self._reset_task(**kwargs)
-                else:
-                    self._mutex_reset_task(**kwargs)
+                self._reset_task(**kwargs)
 
             @property
             def is_done(self) -> bool:
@@ -319,23 +298,23 @@ class TaskFactory(Namespaced):
                 """
                 return self._force_reset or self.__tm_robots.done
 
-            def set_robot_position(self, position: PositionOrientation):
+            def set_robot_position(self, pose: Pose):
                 """
                 Sets the position of the robot.
 
                 Args:
-                    position (PositionOrientation): The position and orientation of the robot.
+                    position (Pose): The position and orientation of the robot.
                 """
-                self.__tm_robots.set_position(position)
+                self.__tm_robots.set_position(pose)
 
-            def set_robot_goal(self, position: PositionOrientation):
+            def set_robot_goal(self, pose: Pose):
                 """
                 Sets the goal position for the robot.
 
                 Args:
-                    position (PositionOrientation): The goal position for the robot.
+                    position (Pose): The goal position for the robot.
                 """
-                self.__tm_robots.set_goal(position)
+                self.__tm_robots.set_goal(pose)
 
             def force_reset(self):
                 self._force_reset = True

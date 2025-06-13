@@ -7,7 +7,6 @@ import arena_simulation_setup.entities.robot
 import attrs
 import launch
 import launch_ros
-import rclpy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from ros_gz_interfaces.msg import Entity as EntityMsg
 from ros_gz_interfaces.msg import EntityFactory, WorldControl
@@ -15,9 +14,8 @@ from ros_gz_interfaces.srv import (ControlWorld, DeleteEntity, SetEntityPose,
                                    SpawnEntity)
 
 from task_generator.shared import (Entity, Model, ModelType, ModelWrapper,
-                                   PositionOrientation, Robot, Wall)
+                                   Pose, Robot, Wall)
 from task_generator.simulators import BaseSimulator
-from task_generator.utils.geometry import quaternion_from_euler
 
 from .robot_bridge import BridgeConfiguration
 
@@ -51,22 +49,18 @@ class GazeboSimulator(BaseSimulator):
         self._spawn_entity = self.node.create_client(
             SpawnEntity,
             '/world/default/create',
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._delete_entity = self.node.create_client(
             DeleteEntity,
             '/world/default/remove',
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._set_entity_pose = self.node.create_client(
             SetEntityPose,
             '/world/default/set_pose',
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self._control_world = self.node.create_client(
             ControlWorld,
             '/world/default/control',
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
 
         self._logger.info("Waiting for gazebo services...")
@@ -100,7 +94,6 @@ class GazeboSimulator(BaseSimulator):
             PoseStamped,
             self._namespace("goal"),
             10,
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
         self.entities = {}
         self._walls_entities = []
@@ -119,17 +112,17 @@ class GazeboSimulator(BaseSimulator):
             traceback.print_exc()
             raise
 
-    def move_entity(self, name, position):
+    def move_entity(self, name, pose):
         self._logger.info(
             f"Attempting to move entity: {name}")
         self._logger.info(
-            f"Moving entity {name} to position: {position}")
+            f"Moving entity {name} to position: {pose}")
         request = SetEntityPose.Request()
         request.entity = EntityMsg(
             name=name,
             type=EntityMsg.MODEL,
         )
-        request.pose = position.to_pose()
+        request.pose = pose.to_msg()
 
         try:
             self._set_entity_pose.wait_for_service()
@@ -142,7 +135,7 @@ class GazeboSimulator(BaseSimulator):
             self._logger.info(f"Move result for {name}: {result.success}")
 
             if result.success and isinstance((entity := self.entities.get(name, None)), Robot):
-                entity = attrs.evolve(entity, position=position)
+                entity.pose = pose
                 self.entities[name] = entity
                 self._robot_initialpose(entity)
 
@@ -174,16 +167,16 @@ class GazeboSimulator(BaseSimulator):
                     self._logger.error(
                         f"Failed to set initial pose for {name} after {max_attempts} attempts"
                     )
-                # quat = quaternion_from_euler(0.0, 0.0, entity.position.orientation, axes="xyzs")
-                # qx, qy, qz, qw = quat
-                # transform_pub_node = launch_ros.actions.Node(
-                #     package="tf2_ros",
-                #     executable="static_transform_publisher",
-                #     name="map_to_odomframe_publisher",
-                #     arguments=[str(entity.position.x), str(entity.position.y), "0", str(qx), str(qy), str(qz), str(qw), "map", entity.frame + "odom"],
-                #     parameters=[{'use_sim_time': True}],
-                # )
-                # self.node.do_launch(transform_pub_node)
+
+                qx, qy, qz, qw = entity.pose.orientation.x, entity.pose.orientation.y, entity.pose.orientation.z, entity.pose.orientation.w
+                transform_pub_node = launch_ros.actions.Node(
+                    package="tf2_ros",
+                    executable="static_transform_publisher",
+                    name="map_to_odomframe_publisher",
+                    arguments=[str(entity.pose.position.x), str(entity.pose.position.y), "0", str(qx), str(qy), str(qz), str(qw), "map", entity.frame + "odom"],
+                    parameters=[{'use_sim_time': True}],
+                )
+                self.node.do_launch(transform_pub_node)
                 # time.sleep(1)
                 # self.node.get_logger().info("Destroying the static_transform_publisher node after 3 seconds.")
                 # transform_pub_node.destroy_node() # won't work like this, a topic/service to trigger self-destruction
@@ -216,10 +209,10 @@ class GazeboSimulator(BaseSimulator):
             request.entity_factory.sdf = model_description
 
             # Set pose
-            request.entity_factory.pose = entity.position.to_pose()
+            request.entity_factory.pose = entity.pose.to_msg()
 
             self._logger.info(
-                f"Spawn position for {entity.name}: x={entity.position.x}, y={entity.position.y}")
+                f"Spawn position for {entity.name}: x={entity.pose.position.x}, y={entity.pose.position.y}")
 
             self._spawn_entity.wait_for_service()
             self._logger.info(f"Sending spawn request for {entity.name}")
@@ -349,13 +342,13 @@ class GazeboSimulator(BaseSimulator):
             traceback.print_exc()
             return False
 
-    def _publish_goal(self, goal: PositionOrientation):
+    def _publish_goal(self, goal: Pose):
         self._logger.info(
             f"Publishing goal: x={goal.x}, y={goal.y}, orientation={goal.orientation}")
         goal_msg = PoseStamped()
         goal_msg.header.stamp = self.node.get_clock().now().to_msg()
         goal_msg.header.frame_id = "map"
-        goal_msg.pose = goal.to_pose()
+        goal_msg.pose = goal.to_msg()
         self._goal_pub.publish(goal_msg)
         self._logger.info("Goal published")
 
@@ -365,6 +358,8 @@ class GazeboSimulator(BaseSimulator):
         wall_height = 3.0  # Wall height in meters
         wall_thickness = 0.2  # Wall thickness in meters
         base_position = (0, 0, 0)  # Offset the wall to (10, 10, 0)
+
+        self.remove_walls()
 
         self._logger.info(f"Attempting to spawn walls: {wall_name}")
 
@@ -382,7 +377,7 @@ class GazeboSimulator(BaseSimulator):
             return False
 
         entity = Entity(
-            position=PositionOrientation(x=0, y=0, orientation=0),
+            pose=Pose(),
             model=ModelWrapper.from_model(
                 Model(
                     type=ModelType.SDF,
@@ -495,10 +490,7 @@ class GazeboSimulator(BaseSimulator):
         )
 
         mappings = BridgeConfiguration.from_file(
-            os.path.join(
-                arena_simulation_setup.entities.robot.get_model_directory(robot.model.name),
-                'mappings.yaml'
-            )
+            arena_simulation_setup.entities.robot.Robot(robot.model.name).mappings
         ).substitute({
             'robot_name': robot.name,
             'world': '/world/default',
@@ -529,10 +521,6 @@ class GazeboSimulator(BaseSimulator):
                     {'robot_description': description},
                     {'frame_prefix': robot.frame}
                 ],
-                remappings=[
-                    ('/tf', 'tf'),
-                    ('/tf_static', 'tf_static')
-                ]
             )
         )
 
@@ -552,12 +540,11 @@ class GazeboSimulator(BaseSimulator):
 
     def _robot_initialpose(self, robot: Robot):
         pose = PoseWithCovarianceStamped()
-        pose.pose.pose = robot.position.to_pose()
+        pose.pose.pose = robot.pose.to_msg()
         pose.header.frame_id = "map"
 
         self.node.create_publisher(
             PoseWithCovarianceStamped,
             self.node.service_namespace(robot.name, "initialpose"),
             qos_profile=1,
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         ).publish(pose)

@@ -1,26 +1,23 @@
 import abc
-import os
 import re
 import typing
 
 import attrs
 import rclpy
-import yaml
-from ament_index_python import get_package_share_directory
-
-import task_generator.utils.arena as Utils
+from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_rclpy_mixins.shared import Namespace
 from task_generator import NodeInterface
 from task_generator.manager.entity_manager import EntityManager
-from task_generator.shared import Namespace, PositionOrientation, Robot
-from task_generator.utils import ModelLoader
-from task_generator.utils.ros_params import ROSParamT
+from task_generator.manager.environment_manager import EnvironmentManager
+from task_generator.shared import Pose, Position, Robot
+import arena_simulation_setup.configs.robot_setup
 
 from .robot_manager import RobotManager
 
 
 def _initialpose_generator(x: float, y: float, d: float):
     while True:
-        yield PositionOrientation(x=x, y=y, orientation=0)
+        yield Pose(Position(x=x, y=y))
         y += d
 
 
@@ -31,21 +28,7 @@ class _RobotDiff:
     to_update: dict[str, Robot] = attrs.field(factory=dict)
 
 
-_T_NamedRobots = dict[str, Robot]
-
-_robot_loader = ModelLoader(
-    os.path.join(
-        Utils.get_simulation_setup_path(),
-        'entities',
-        'robots',
-    ),
-)
-
-
 class RobotsManager(abc.ABC):
-
-    _entity_manager: EntityManager
-    _robot_managers: dict[str, RobotManager]
 
     @property
     def robot_managers(self) -> dict[str, RobotManager]:
@@ -55,9 +38,10 @@ class RobotsManager(abc.ABC):
     def set_up(self):
         ...
 
-    def __init__(self, entity_manager: EntityManager) -> None:
-        self._entity_manager = entity_manager
-        self._robot_managers = {}
+    def __init__(self, entity_manager: EntityManager, environment_manager: EnvironmentManager) -> None:
+        self._entity_manager: EntityManager = entity_manager
+        self._environment_manager: EnvironmentManager = environment_manager
+        self._robot_managers: dict[str, RobotManager] = {}
 
 
 class RobotsManagerROS(NodeInterface, RobotsManager):
@@ -68,31 +52,6 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
     _initialpose: typing.Generator
     _robot_configurations: ROSParamT[_RobotDiff]
     _diff: _RobotDiff
-
-    @classmethod
-    def _parse_setup_file(
-        cls,
-        setup_file: str
-    ) -> typing.Iterable[dict]:
-        with open(
-            os.path.join(
-                get_package_share_directory('arena_bringup'),
-                'configs',
-                'robot_setup',
-                setup_file
-            )
-        ) as f:
-            configuration = yaml.load(f, yaml.SafeLoader)
-
-        result: list[dict] = []
-
-        for entry_ in configuration:
-            entry: dict = dict(entry_)
-            amount = int(entry.pop('amount', 1))
-            for _ in range(amount):
-                result.append(entry)
-
-        return result
 
     def _parse_robot_configurations(
         self,
@@ -106,7 +65,7 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
 
         def add(base: dict):
             name = base.get('name')
-            config = Robot.parse(base, _robot_loader.bind(base['model']))
+            config = Robot.parse(base)
 
             if name is None:  # anon
                 parsed_anonymous.setdefault(
@@ -123,7 +82,7 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
         for arg in robot_arg:
             if arg.endswith('.yaml'):
                 # load robot_setup_file from arena_bringup/configs/robot_setup
-                for addition in self._parse_setup_file(arg):
+                for addition in arena_simulation_setup.configs.robot_setup.RobotSetup(arg).load():
                     add(addition)
             elif (match := re.match(r'(.*)\[(\d+)\]', arg)):
                 # multi-instantiations via model[count]
@@ -211,17 +170,17 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
         self._diff.to_update.clear()
 
         for robot_name, config in self._diff.to_add.items():
+            config = attrs.evolve(config)
+            config.name = robot_name
+            config.pose = next(self._initialpose)
             manager = RobotManager(
                 namespace=Namespace(
                     self.node.get_namespace())(
                         self.node.get_name(),
                 ),
-                environment_manager=self._entity_manager,
-                robot=attrs.evolve(
-                    config,
-                    name=robot_name,
-                    position=next(self._initialpose)
-                ),
+                entity_manager=self._entity_manager,
+                environment_manager=self._environment_manager,
+                robot=config
             )
             manager.set_up_robot()
             self._robot_managers[robot_name] = manager
@@ -229,9 +188,9 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
 
         self.node.rosparam[list[str]].set('robot_names', [robot.name for robot in self._robot_managers.values()])
 
-    def __init__(self, entity_manager: EntityManager) -> None:
+    def __init__(self, entity_manager: EntityManager, environment_manager: EnvironmentManager) -> None:
         NodeInterface.__init__(self)
-        RobotsManager.__init__(self, entity_manager=entity_manager)
+        RobotsManager.__init__(self, entity_manager=entity_manager, environment_manager=environment_manager)
         self._initialpose = _initialpose_generator(-10, -10, -5)
 
         self._robot_configurations = self.node.ROSParam[_RobotDiff](

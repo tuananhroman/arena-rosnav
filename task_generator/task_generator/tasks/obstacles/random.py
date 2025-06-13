@@ -6,13 +6,17 @@ from typing import Callable, Iterator
 import attrs
 import numpy as np
 import rclpy
+from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_simulation_setup.entities.obstacles.dynamic import \
+    loader as DYNAMIC_OBSTACLE_LOADER
+from arena_simulation_setup.entities.obstacles.static import \
+    loader as OBSTACLE_LOADER
+from arena_simulation_setup.utils.models.model_loader import ModelLoader
 
-from task_generator.shared import (DynamicObstacle, Obstacle,
-                                   PositionOrientation, PositionRadius)
+from task_generator.shared import (DynamicObstacle, Obstacle, Orientation,
+                                   Pose, Position, PositionRadius)
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
 from task_generator.tasks.obstacles.utils import ITF_Obstacle
-from task_generator.utils import ModelLoader
-from task_generator.utils.ros_params import ROSParamT
 
 
 @attrs.define()
@@ -149,10 +153,9 @@ class TM_Random(TM_Obstacles):
         )
 
         _positions = [
-            PositionOrientation(
-                x=pos.x,
-                y=pos.y,
-                orientation=2 * np.pi * self.node.conf.General.RNG.value.random(),
+            Pose(
+                pos,
+                orientation=Orientation.from_yaw(2 * np.pi * self.node.conf.General.RNG.value.random())
             )
             for pos in points[
                 : (N_STATIC_OBSTACLES + N_INTERACTIVE_OBSTACLES + N_DYNAMIC_OBSTACLES)
@@ -178,8 +181,8 @@ class TM_Random(TM_Obstacles):
                     self.node,
                     self._PROPS,
                     name=f"S_{model}_{index(model)}",
-                    model=self._PROPS.model_loader.bind(model),
-                    position=next(positions),
+                    model=model,
+                    pose=next(positions),
                 )
                 for model in self.node.conf.General.RNG.value.choice(
                     a=MODELS_STATIC_OBSTACLES.a,
@@ -197,8 +200,8 @@ class TM_Random(TM_Obstacles):
                     self.node,
                     self._PROPS,
                     name=f"I_{model}_{index(model)}",
-                    model=self._PROPS.model_loader.bind(model),
-                    position=next(positions),
+                    model=model,
+                    pose=next(positions),
                 )
                 for model in self.node.conf.General.RNG.value.choice(
                     a=MODELS_INTERACTIVE_OBSTACLES.a,
@@ -219,12 +222,12 @@ class TM_Random(TM_Obstacles):
                     self.node,
                     self._PROPS,
                     name=f"D_{model}_{index(model)}",
-                    model=self._PROPS.dynamic_model_loader.bind(model),
+                    model=model,
                     waypoints=list(
                         itertools.islice(
                             waypoints,
                             waypoints_per_ped)),
-                    position=next(positions),
+                    pose=next(positions),
                 )
                 for model in self.node.conf.General.RNG.value.choice(
                     a=MODELS_DYNAMIC_OBSTACLES.a,
@@ -244,8 +247,7 @@ class TM_Random(TM_Obstacles):
             lo, hi = min(lo, hi), max(lo, hi)
             return lo, hi
 
-        def param_to_modellist(loader: ModelLoader,
-                               v: typing.Any) -> list[str]:
+        def param_to_modellist(loader: ModelLoader, v: typing.Any) -> list[str]:
             if len(v):
                 return v
             return list(loader.models)
@@ -275,27 +277,18 @@ class TM_Random(TM_Obstacles):
                 self.namespace(STATIC, 'models'),
                 [],
                 type_=rclpy.Parameter.Type.STRING_ARRAY,
-                parse=functools.partial(
-                    param_to_modellist,
-                    self._PROPS.model_loader
-                )
+                parse=functools.partial(param_to_modellist, OBSTACLE_LOADER)
             ),
             MODELS_INTERACTIVE_OBSTACLES=self.node.ROSParam[list[str]](
                 self.namespace(INTERACTIVE, 'models'),
                 [],
                 type_=rclpy.Parameter.Type.STRING_ARRAY,
-                parse=functools.partial(
-                    param_to_modellist,
-                    self._PROPS.model_loader
-                )
+                parse=functools.partial(param_to_modellist, OBSTACLE_LOADER)
             ),
             MODELS_DYNAMIC_OBSTACLES=self.node.ROSParam[list[str]](
                 self.namespace(DYNAMIC, 'models'),
                 [],
                 type_=rclpy.Parameter.Type.STRING_ARRAY,
-                parse=functools.partial(
-                    param_to_modellist,
-                    self._PROPS.dynamic_model_loader
-                )
+                parse=functools.partial(param_to_modellist, DYNAMIC_OBSTACLE_LOADER)
             ),
         )

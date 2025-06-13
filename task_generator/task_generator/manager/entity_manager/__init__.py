@@ -3,14 +3,14 @@ import typing
 
 import rclpy
 import rclpy.publisher
+from arena_rclpy_mixins.shared import Namespace
 from geometry_msgs.msg import PoseStamped
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
 from task_generator.manager.entity_manager.utils import (KnownObstacles,
                                                          ObstacleLayer)
-from task_generator.shared import (DynamicObstacle, Namespace, Obstacle,
-                                   PositionOrientation, Robot, Wall)
+from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall
 from task_generator.simulators import BaseSimulator
 from task_generator.utils.registry import Registry
 
@@ -57,7 +57,7 @@ class EntityManager(NodeInterface, abc.ABC):
         for obstacle in obstacles:
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
                 known.obstacle = obstacle
-                self._simulator.move_entity(known.obstacle.name, known.obstacle.position)
+                self._simulator.move_entity(known.obstacle.name, known.obstacle.pose)
                 known.layer = ObstacleLayer.INUSE
             else:
                 known = self._known_obstacles.create_or_get(
@@ -85,7 +85,7 @@ class EntityManager(NodeInterface, abc.ABC):
         for obstacle in obstacles:
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
                 known.obstacle = obstacle
-                self._simulator.move_entity(known.obstacle.name, known.obstacle.position)
+                self._simulator.move_entity(known.obstacle.name, known.obstacle.pose)
                 known.layer = ObstacleLayer.INUSE
             else:
                 known = self._known_obstacles.create_or_get(
@@ -166,7 +166,7 @@ class EntityManager(NodeInterface, abc.ABC):
     def move_robot(
         self,
         name: str,
-        position: PositionOrientation
+        pose: Pose
     ):
         """
         Moves a robot.
@@ -174,9 +174,9 @@ class EntityManager(NodeInterface, abc.ABC):
         @position: Target position
         """
         self._logger.debug(
-            f'moving robot {name} to {repr(position)}')
-        self._simulator.move_entity(name, position)
-        self._move_robot_impl(name, position)
+            f'moving robot {name} to {repr(pose)}')
+        self._simulator.move_entity(name, pose)
+        self._move_robot_impl(name, pose)
 
     # impl
 
@@ -225,7 +225,7 @@ class EntityManager(NodeInterface, abc.ABC):
     def _move_robot_impl(
         self,
         name: str,
-        position: PositionOrientation
+        pose: Pose
     ) -> bool:
         ...
 

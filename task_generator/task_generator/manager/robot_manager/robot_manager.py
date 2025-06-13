@@ -6,21 +6,23 @@ import ament_index_python
 import attrs
 import geometry_msgs.msg as geometry_msgs
 import launch
+import lifecycle_msgs.msg
 import nav_msgs.msg as nav_msgs
 import rclpy
 import rclpy.client
 import rclpy.publisher
 import rclpy.timer
-import scipy.spatial.transform
+from arena_rclpy_mixins.shared import Namespace
 from nav2_msgs.srv import ClearCostmapAroundRobot
 
+import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import task_generator.utils.arena as Utils
 from task_generator import NodeInterface
 from task_generator.constants import Constants
+from task_generator.manager.entity_manager import EntityManager
 from task_generator.manager.entity_manager.utils import YAMLUtil
 from task_generator.manager.environment_manager import EnvironmentManager
-from task_generator.shared import (ModelType, Namespace, PositionOrientation,
-                                   Robot)
+from task_generator.shared import ModelType, Pose, Position, Orientation, Robot
 
 
 class RobotManager(NodeInterface):
@@ -30,10 +32,11 @@ class RobotManager(NodeInterface):
     """
 
     _namespace: Namespace
+    _entity_manager: EntityManager
     _environment_manager: EnvironmentManager
-    _start_pos: PositionOrientation
-    _goal_pos: PositionOrientation
-    _position: PositionOrientation
+    _start_pos: Pose
+    _goal_pos: Pose
+    _pose: Pose
     _robot_radius: float
     _goal_tolerance_distance: float
     _goal_tolerance_angle: float
@@ -50,16 +53,17 @@ class RobotManager(NodeInterface):
         return self._robot
 
     @property
-    def start_pos(self) -> PositionOrientation:
+    def start_pos(self) -> Pose:
         return self._start_pos
 
     @property
-    def goal_pos(self) -> PositionOrientation:
+    def goal_pos(self) -> Pose:
         return self._goal_pos
 
     def __init__(
         self,
         namespace: Namespace,
+        entity_manager: EntityManager,
         environment_manager: EnvironmentManager,
         robot: Robot,
     ):
@@ -67,9 +71,11 @@ class RobotManager(NodeInterface):
         self._rate_setup = self.node.create_rate(.1)
 
         self._namespace = namespace
+        self._entity_manager = entity_manager
         self._environment_manager = environment_manager
-        self._start_pos = PositionOrientation(0, 0, 0)
-        self._goal_pos = PositionOrientation(0, 0, 0)
+
+        self._start_pos = Pose()
+        self._goal_pos = Pose()
         self._is_goal_reached = False
 
         # Parameter handling
@@ -86,7 +92,7 @@ class RobotManager(NodeInterface):
 
         self._robot = robot
         self._robot.extra.setdefault('namespace', self.namespace)
-        self._position = self._start_pos
+        self._pose = self._start_pos
         self._goal_timer = None
 
     def set_up_robot(self):
@@ -110,8 +116,9 @@ class RobotManager(NodeInterface):
         _gen_goal_topic = self.namespace("goal_pose")
 
         self._goal_pub = self.node.create_publisher(
-            geometry_msgs.PoseStamped, _gen_goal_topic, 10,
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
+            geometry_msgs.PoseStamped,
+            _gen_goal_topic,
+            10,
         )
 
         self.node.create_subscription(
@@ -163,37 +170,45 @@ class RobotManager(NodeInterface):
     def is_done(self) -> bool:
         return self._is_goal_reached
 
-    def move_robot_to_pos(self, position: PositionOrientation):
-        self._environment_manager.move_robot(name=self.name, position=position)
+    def move_robot_to_pos(self, pose: Pose):
+        self._entity_manager.move_robot(name=self.name, pose=pose)
         self.clearCostmapAroundRobot(5.0)
 
-    def clearCostmapAroundRobot(self, reset_distance: float) -> None:
+    def clearCostmapAroundRobot(self, reset_distance: float) -> bool:
         """Clear the costmap around the robot."""
 
-        service_name = os.path.join(self.namespace, 'local_costmap/clear_around_local_costmap')
+        state = self.node.get_lifecycle_state(
+            node_name := self.node.service_namespace(self.name, 'local_costmap/local_costmap'),
+        )
+        if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
+            return False
+
+        service_name = os.path.abspath(node_name('../clear_around_local_costmap'))
+
         self._logger.info(f"Service name: {service_name}")
         self._clear_costmaps_srv = self.node.create_client(
             ClearCostmapAroundRobot,
             service_name,
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
-        # while not self._clear_costmaps_srv.wait_for_service(timeout_sec=1.0):
-        #     self._logger.warn(f'{service_name} service not available, waiting...')
+        while not self._clear_costmaps_srv.wait_for_service(timeout_sec=1.0):
+            self._logger.warn(f'{service_name} service not available, waiting...')
         req = ClearCostmapAroundRobot.Request()
         req.reset_distance = reset_distance
+
         result = self._clear_costmaps_srv.call(req)
         if result is None:
             self._logger.error(
                 f"service call failed for {service_name}")
-            return
+            return False
         self._logger.info(
             f"successfull service call for {service_name}"
         )
+        return True
 
     def reset(
         self,
-        start_pos: typing.Optional[PositionOrientation],
-        goal_pos: typing.Optional[PositionOrientation],
+        start_pos: typing.Optional[Pose],
+        goal_pos: typing.Optional[Pose],
     ):
         if start_pos is not None:
             self._start_pos = self._environment_manager.realize(start_pos)
@@ -204,7 +219,6 @@ class RobotManager(NodeInterface):
                     self.namespace.robot_ns.ParamNamespace()("start"),
                     [self.start_pos.x, self.start_pos.y, self.start_pos.orientation]
                 )
-
         if goal_pos is not None:
             self._goal_pos = self._environment_manager.realize(goal_pos)
             self._publish_goal(self._goal_pos)
@@ -215,7 +229,7 @@ class RobotManager(NodeInterface):
                     [self.goal_pos.x, self.goal_pos.y,
                         self.goal_pos.orientation]
                 )
-        return self._position, self._goal_pos
+        return self._pose, self._goal_pos
 
     def _publish_goal_callback(self):
         from geometry_msgs.msg import PoseStamped
@@ -239,14 +253,14 @@ class RobotManager(NodeInterface):
         goal_msg = PoseStamped()
         goal_msg.header.frame_id = "map"
         goal_msg.header.stamp = self.node.get_clock().now().to_msg()
-        goal_msg.pose = self._goal_pos.to_pose()
+        goal_msg.pose = self._goal_pos.to_msg()
         self._goal_pub.publish(goal_msg)
 
-    def _publish_goal(self, goal: PositionOrientation):
+    def _publish_goal(self, goal: Pose):
         # only way to circumvent amcl absolutely trolling us is to create this loop
         from geometry_msgs.msg import PoseStamped
         self._logger.info(
-            f"Publishing goal: x={goal.x}, y={goal.y}, orientation={goal.orientation}")
+            f"Publishing goal: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}")
 
         self._goal_pos = goal
 
@@ -257,25 +271,26 @@ class RobotManager(NodeInterface):
         goal_msg = PoseStamped()
         goal_msg.header.frame_id = "map"
         goal_msg.header.stamp = self.node.get_clock().now().to_msg()
-        goal_msg.pose = goal.to_pose()
+        goal_msg.pose = goal.to_msg()
         self._goal_pub.publish(goal_msg)
 
         self._goal_start_time = self.node.get_clock().now().nanoseconds / 1e9
         self._goal_timer = self.node.create_timer(
             3.0,
             self._publish_goal_callback,
-            callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
         )
 
     def _launch_robot(self):
         self._logger.warn(f"START WITH MODEL {self.name}")
 
         if Utils.get_arena_type() != Constants.ArenaType.TRAINING:
+
             launch_description = launch.LaunchDescription()
+            current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
+            launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
 
             launch_arguments = {
                 'robot': self.model_name,
-                # 'world_path': self.node.conf.Arena.get_world_path(),
                 # 'simulator': self.node.conf.Arena.SIMULATOR.value.value,
                 # 'name': self.name,
                 'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
@@ -289,6 +304,7 @@ class RobotManager(NodeInterface):
                 # 'train_mode': self.node.declare_parameter('train_mode', False).value,
                 'agent_name': self._robot.agent,
                 'use_sim_time': 'True',
+                'amcl': 'true' if self.node.conf.Arena.SIMULATOR.value == Constants.Simulator.GAZEBO else 'false',
             }
 
             if self._robot.record_data_dir:
@@ -314,35 +330,16 @@ class RobotManager(NodeInterface):
                 # TODO redo this globally in the robots manager, every get_node_names call is expensive
                 self._rate_setup.sleep()  # we love race conditions
 
-        # TODO
-        # base_frame: str = self.node.get_parameter_or(self.namespace("robot_base_frame"), DefaultParameter('')).value
-        # sensor_frame: str =
-        # self.node.get_parameter_or(self.namespace("robot_sensor_frame"),
-        # DefaultParameter('')).value
-
-        # self.node.set_parameters([
-        #     Parameter(self.namespace("move_base", "global_costmap", "robot_base_frame"),
-        #               Parameter.Type.STRING, os.path.join(self.name, base_frame)),
-        #     Parameter(self.namespace("move_base", "local_costmap", "robot_base_frame"),
-        #               Parameter.Type.STRING, os.path.join(self.name, base_frame)),
-        #     Parameter(self.namespace("move_base", "local_costmap", "scan", "sensor_frame"),
-        #               Parameter.Type.STRING, os.path.join(self.name, sensor_frame)),
-        #     Parameter(self.namespace("move_base", "global_costmap", "scan", "sensor_frame"),
-        #               Parameter.Type.STRING, os.path.join(self.name, sensor_frame))
-        # ])
-
     def _robot_pos_callback(self, data: nav_msgs.Odometry):
         current_position = data.pose.pose
         quat = current_position.orientation
 
-        rot = scipy.spatial.transform.Rotation.from_quat(
-            [quat.x, quat.y, quat.z, quat.w]
-        )
-
-        self._position = PositionOrientation(
-            current_position.position.x,
-            current_position.position.y,
-            rot.as_euler("xyz")[2],
+        self._pose = Pose(
+            Position(
+                current_position.position.x,
+                current_position.position.y,
+            ),
+            Orientation.from_msg(quat)
         )
 
     def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
@@ -362,5 +359,5 @@ class RobotManager(NodeInterface):
         if self._goal_timer is not None:
             self._goal_timer.cancel()
             self._goal_timer.destroy()
-        self._environment_manager.remove_robot(self.name)
+        self._entity_manager.remove_robot(self.name)
         # TODO kill node in navigation stack

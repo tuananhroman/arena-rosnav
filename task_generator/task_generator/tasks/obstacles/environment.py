@@ -1,20 +1,18 @@
 import itertools
 import math
-import os
 import random
 from collections import defaultdict
 
+import arena_simulation_setup.configs.environment
 import attrs
 import numpy as np
 import shapely
-import yaml
+from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from shapely.geometry import Point
 
-from task_generator.shared import (DynamicObstacle, Obstacle,
-                                   PositionOrientation)
+from task_generator.shared import (DynamicObstacle, Obstacle, Orientation,
+                                   Pose, Position)
 from task_generator.tasks.obstacles import Obstacles, TM_Obstacles
-from task_generator.utils.arena import get_simulation_setup_path
-from task_generator.utils.ros_params import ROSParamT
 
 
 @attrs.define()
@@ -367,17 +365,7 @@ class TM_Environment(TM_Obstacles):
 
     def _parse_environment(self, environment_file: str) -> _ParsedConfig:
 
-        environment_path = os.path.join(
-            get_simulation_setup_path(),
-            'configs',
-            'environment',
-            environment_file
-        )
-
-        with open(environment_path) as f:
-            environment = yaml.safe_load(f)
-            self._logger.info("Environment:")
-            # print(environment)
+        environment = arena_simulation_setup.configs.environment.Environment(environment_file).load()
 
         static_obstacles: list[Obstacle] = []
         dynamic_obstacles: list[DynamicObstacle] = []
@@ -398,9 +386,7 @@ class TM_Environment(TM_Obstacles):
         # print(rooms)
 
         groups = environment["groups"]
-        offset = random.randint(0, len(groups))
-        groups_selection = list(itertools.islice(itertools.cycle(groups), offset, offset + len(rooms)))
-        random.shuffle(groups_selection)
+        groups_selection = random.choices(groups, k=len(rooms))
         groups_iter = iter(groups_selection)
 
         # self.visualize_rooms(walls, rooms)
@@ -460,8 +446,11 @@ class TM_Environment(TM_Obstacles):
                                 obs_name = f"G_{group_name}_{idx}_{n_groups}_{entity['model']}_{j}"
                                 new_obstacle = Obstacle(
                                     name=obs_name,
-                                    position=PositionOrientation(x=obstacle_x, y=obstacle_y, orientation=rot_theta),
-                                    model=self._PROPS.model_loader.bind(entity["model"]),
+                                    pose=Pose(
+                                        Position(x=obstacle_x, y=obstacle_y),
+                                        Orientation.from_yaw(rot_theta)
+                                    ),
+                                    model=entity["model"],
                                     extra={},
                                 )
                                 static_obstacles.append(new_obstacle)
@@ -479,8 +468,11 @@ class TM_Environment(TM_Obstacles):
                                 obs_name = f"G_{group_name}_{idx}_{n_groups}_{entity['model']}_{j}"
                                 new_obstacle = DynamicObstacle(
                                     name=obs_name,
-                                    position=PositionOrientation(x=obstacle_x, y=obstacle_y, orientation=rot_theta),
-                                    model=self._PROPS.model_loader.bind(entity["model"]),
+                                    pose=Pose(
+                                        Position(x=obstacle_x, y=obstacle_y),
+                                        Orientation.from_yaw(rot_theta)
+                                    ),
+                                    model=entity["model"],
                                     waypoints=entity['waypoints'],
                                     extra={},
                                 )
