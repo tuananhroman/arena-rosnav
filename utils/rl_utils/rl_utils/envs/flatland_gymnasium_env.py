@@ -18,8 +18,8 @@ from rl_utils.utils.observation_collector.observation_units.semantic_ped_unit im
     SemanticAggregateUnit,
 )
 from rl_utils.utils.rewards.reward_function import RewardFunction
-from rosnav.model.base_agent import BaseAgent
-from rosnav.rosnav_space_manager.rosnav_space_manager import RosnavSpaceManager
+from rosnav_rl.model.base_agent import BaseAgent
+from rosnav_rl.rosnav_space_manager.rosnav_space_manager import RosnavSpaceManager
 from std_srvs.srv import Empty
 
 from task_generator.task_generator_node import TaskGenerator

@@ -2,6 +2,7 @@ from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import gymnasium
 import numpy as np
+import rclpy
 import rclpy.callback_groups as callback_groups
 from geometry_msgs.msg import Twist
 from rosnav_rl.observations import (
@@ -198,7 +199,7 @@ class GazeboEnv(gymnasium.Env):
         # agent action publisher
         self.agent_action_pub = self.node.create_publisher(
             Twist,
-            str(self.ns("cmd_vel")),
+            str(self.ns("cmd_vel_raw")),
             1,
             callback_group=callback_groups.MutuallyExclusiveCallbackGroup(),
         )
@@ -327,6 +328,7 @@ class GazeboEnv(gymnasium.Env):
         obs_dict: Dict[str, Any] = self.observation_collector.get_observations(
             is_terminal=False, is_first=True
         )
+
         obs_dict.update({DoneObservation.name: True})
 
         self.__is_first = True
@@ -351,8 +353,25 @@ class GazeboEnv(gymnasium.Env):
         It ensures that the task is reset properly and prepares the environment for a new episode.
 
         """
-        if self._reset_task_srv:
-            self._reset_task_srv.call(EmptySrv.Request())
+        if self._reset_task_srv and self._reset_task_srv.service_is_ready():
+            future = self._reset_task_srv.call_async(EmptySrv.Request())
+            rclpy.spin_until_future_complete(
+                self.node, future, timeout_sec=5.0
+            )  # Added timeout
+            if future.done():
+                response = future.result()
+                if response is None:
+                    self.node.get_logger().error(
+                        f"Service call to '{self._reset_task_srv.srv_name}' failed: {future.exception()}"
+                    )
+            else:
+                self.node.get_logger().error(
+                    f"Service call to '{self._reset_task_srv.srv_name}' timed out."
+                )
+        elif self._reset_task_srv:
+            self.node.get_logger().warn(
+                f"Service '{self._reset_task_srv.srv_name}' not ready."
+            )
 
     def _before_task_reset(self):
         """

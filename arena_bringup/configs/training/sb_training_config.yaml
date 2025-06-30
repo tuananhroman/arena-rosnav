@@ -54,7 +54,7 @@ agent_cfg:
   reward:
     reward_function_dict: 
       goal_reached:
-        reward: 15  # Positive reward for reaching the goal
+        reward: 20  # Positive reward for reaching the goal
 
       factored_safe_distance:
         factor: -0.2  # Penalty factor for getting too close to obstacles
@@ -74,42 +74,6 @@ agent_cfg:
         threshold: 0.0  # Threshold below which reverse motion is penalized
         _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
 
-      # approach_globalplan:  # Uncomment to reward following the global plan
-      #   pos_factor: 0.05  # Reward factor for approaching the global plan
-      #   neg_factor: 0.05  # Penalty factor for moving away from the global plan
-      #   _on_safe_dist_violation: true  # Apply when safety distance is violated
-
-      two_factor_velocity_difference:
-        alpha: 0.005  # Weight for linear velocity difference
-        beta: 0.0  # Weight for angular velocity difference
-        _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
-
-      # active_heading_direction:  # Uncomment to reward following an active heading direction
-      #   r_angle: 0.7  # Reward factor based on angle difference
-      #   iters: 60  # Number of iterations to consider
-      #   _on_safe_dist_violation: true  # Apply when safety distance is violated
-
-      ped_type_collision:
-        type_reward_pairs:  # Different collision penalties based on pedestrian type
-          0: -2.5  # Type 0 pedestrian collision penalty
-          1: -5    # Type 1 pedestrian collision penalty (more severe)
-
-      ped_type_factored_safety_distance:
-        type_factor_pairs:  # Different safety distance factors based on pedestrian type
-          0: -0.1  # Type 0 pedestrian safety distance factor
-          1: -0.2  # Type 1 pedestrian safety distance factor (more strict)
-        safety_distance: 1.0  # Minimum distance to maintain from pedestrians
-
-      # max_steps_exceeded:  # Uncomment to penalize exceeding maximum steps
-      #   reward: -15  # Penalty for exceeding maximum steps
-
-      angular_vel_constraint:
-        penalty_factor: -0.01  # Penalty factor for excessive angular velocity
-        threshold: 0.5  # Threshold above which angular velocity is penalized
-
-      linear_vel_boost:
-        reward_factor: 0.01  # Reward factor for maintaining forward velocity
-        threshold: 0.0  # Threshold above which velocity is rewarded
     reward_unit_kwargs: null  # Additional arguments for reward units
     verbose: false # Print detailed reward values during training
 

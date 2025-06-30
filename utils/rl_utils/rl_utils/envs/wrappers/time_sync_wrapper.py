@@ -5,7 +5,7 @@ from rclpy.time import Time  # Import Time for type hinting
 
 
 class TimeSyncWrapper(gym.Wrapper):
-    def __init__(self, env, node: Node, control_hz: float = 20.0):
+    def __init__(self, env, control_hz: float = 10.0):
         """
         A Gym Wrapper to synchronize step calls to a specific control frequency using ROS 2 time.
 
@@ -15,10 +15,10 @@ class TimeSyncWrapper(gym.Wrapper):
             control_hz: The desired control frequency in Hz.
         """
         super().__init__(env)
-        if not isinstance(node, Node):
+        if not isinstance(env.node, Node):
             raise ValueError("A valid rclpy.node.Node must be provided.")
-        self.node = node
-        self.clock = node.get_clock()
+        self.node = env.node
+        self.clock = self.node.get_clock()
 
         if control_hz <= 0:
             raise ValueError("control_hz must be positive.")
