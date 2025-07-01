@@ -28,10 +28,6 @@ repositories:
     type: git
     url: https://github.com/SugerSenpai/nav2py_sicnav
     version: fixed
-  planners/rosnav:
-    type: git
-    url: https://github.com/tuananhroman/arena-rosnav.git
-    version: ee773f6
 #   planners
 #   planners/my_planner:
 #     type: git
