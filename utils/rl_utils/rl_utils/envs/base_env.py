@@ -1,4 +1,3 @@
-import subprocess
 import threading
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional, Tuple, Type, Union
@@ -24,10 +23,6 @@ from std_srvs.srv import Empty as EmptySrv
 from rl_utils.node import SupervisorNode
 from rl_utils.utils.envs import determine_termination
 from rl_utils.utils.type_alias.observation import InformationDict
-from rclpy.executors import SingleThreadedExecutor
-
-import time
-import os
 
 
 def get_twist_from_action(action: np.ndarray) -> Twist:
@@ -113,8 +108,8 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.node = node
         self.ns = Namespace(ns) if isinstance(ns, str) else ns
 
-        self._is_train_mode = node.get_parameter_or("/train_mode", True)
-        if self._is_train_mode and reward_function is None:
+        self._is_train_mode = self.node.get_parameter_or("/train_mode", True)
+        if self.is_train_mode and reward_function is None:
             raise ValueError("A reward function is required for training mode.")
 
         self._initialize_agent_components(space_manager, reward_function)
@@ -129,20 +124,14 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.__is_first_step = True
 
         # Synchronization mechanism for step() and ROS service callback
-        self._service_request_event = threading.Event()
-        self._action_lock = threading.Lock()
+        self._action_condition = threading.Condition()
         self._pending_action: Optional[np.ndarray] = None
-        self._action_consumed = True  # Track if action was consumed by service callback
-        self._step_counter = 0  # For debugging
-        self._service_active = (
-            False  # Track if we're currently processing a service request
-        )
+        self._action_is_available = False  # True when step() provides an action
+        self._action_is_consumed = True  # True when service consumes the action
 
         self._shutdown_event = threading.Event()
         self._spin_thread = threading.Thread(target=self._spin_loop)
         self._spin_thread.start()
-
-        self._first_env_step = True
 
         if not init_by_call:
             self._initialize_environment()
@@ -249,55 +238,31 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """Encodes the given observation using the model space encoder."""
         return self._model_space_manager.encode_observation(observation, **kwargs)
 
-    def _populate_action(self, action: np.ndarray):
-        """Stores the action and waits for the service request to proceed."""
-        self._step_counter += 1
-        step_id = self._step_counter
+    def _wait_for_action_consumption(self, timeout: float = 1.0) -> None:
+        """
+        Waits for the `get_command` service to consume the action set by `step()`.
 
-        # Check if previous action was consumed
-        with self._action_lock:
-            if not self._action_consumed:
-                self.node.get_logger().warn(
-                    f"[Step {step_id}] Previous action was not consumed by controller service - "
-                    "this may indicate synchronization issues"
-                )
+        This method is called from `step()` to synchronize with the ROS service.
+        It waits until `_on_get_command_request` signals that it has taken the action.
 
-            # Store the new action for the service callback to use
-            self._pending_action = action
-            self._action_consumed = False  # Mark as not yet consumed
-            self._service_active = True  # Mark that we're expecting a service request
-            self.node.get_logger().info(
-                f"[Step {step_id}] Action stored, waiting for service request..."
-            )
+        Args:
+            timeout (float): Maximum time to wait in seconds.
 
-        # Wait for the service callback to signal that a request is pending
-        timeout_sec = 30.0
-        start_time = self.node.get_clock().now()
-
-        while True:
-            if self._service_request_event.wait(timeout=2.0):
-                self.node.get_logger().info(
-                    f"[Step {step_id}] Service request received, action sent to controller"
-                )
-                break
-
-            current_time = self.node.get_clock().now()
-            elapsed = (current_time - start_time).nanoseconds / 1e9
-
-            if elapsed > timeout_sec:
-                with self._action_lock:
-                    self._service_active = False
-
+        Raises:
+            RuntimeError: If the timeout is exceeded, indicating a likely deadlock
+                          or issue with the simulation controller.
+        """
+        with self._action_condition:
+            # Wait until the service signals that it has consumed the action.
+            # The `wait_for` method returns False on timeout.
+            if not self._action_condition.wait_for(
+                lambda: self._action_is_consumed, timeout=timeout
+            ):
                 self.node.get_logger().error(
-                    f"[Step {step_id}] Timeout waiting for service request after {elapsed:.1f}s"
+                    f"Timeout waiting for action to be consumed after {timeout}s. "
+                    "The simulation controller may not be requesting commands."
                 )
-                raise RuntimeError(
-                    "Service request timeout - controller may not be running or has timed out"
-                )
-
-            self.node.get_logger().warn(
-                f"[Step {step_id}] Still waiting for service request... ({elapsed:.1f}s elapsed)"
-            )
+                raise RuntimeError("Action consumption timeout")
 
     def step(
         self, action: np.ndarray
@@ -305,21 +270,37 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """
         Processes a single step in the environment.
 
-        This method stores the action, waits for a service request, responds with the action,
-        then continues with environment step logic while PPO calculates the next action.
+        This method performs the following key actions:
+        1. Decodes the action provided by the RL agent.
+        2. Makes the action available for the `get_command` ROS service.
+        3. Notifies the service that an action is ready.
+        4. Waits for the service to consume the action, ensuring synchronization.
+        5. After the action is consumed, it retrieves the new observation from the simulation.
+        6. Calculates the reward and determines if the episode has terminated.
+        7. Encodes the observation and returns the standard Gymnasium step tuple.
         """
         if self.__is_first_step:
             self._setup_action_service()
 
-        # Clear the event ONLY if no service is currently being processed
-        # This prevents clearing an event that was just set by an incoming service request
-        with self._action_lock:
-            if not self._service_active:
-                self._service_request_event.clear()
+        decoded_action = self._decode_action(action)
 
-        self._populate_action(self._decode_action(action))
+        # Make the action available to the service and notify it.
+        with self._action_condition:
+            if not self._action_is_consumed:
+                self.node.get_logger().warn(
+                    "New action is being set, but previous one was not consumed. "
+                    "This may indicate a synchronization issue."
+                )
+            self._pending_action = decoded_action
+            self._action_is_available = True
+            self._action_is_consumed = False
+            # Notify the waiting service thread that an action is ready.
+            self._action_condition.notify()
 
-        # Now proceed with the environment step logic
+        # Wait for the simulation controller to request and consume the action.
+        self._wait_for_action_consumption()
+
+        # Once the action is consumed, proceed with the environment step.
         obs_dict = self.observation_collector.get_observations(
             simulation_state_container=self.__simulation_state_container,
             is_first=self.__is_first_step,
@@ -350,43 +331,44 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self, request: GetCommand.Request, response: GetCommand.Response
     ) -> GetCommand.Response:
         """
-        ROS2 service callback for receiving command requests.
+        ROS2 service callback for receiving command requests from the simulation.
 
-        This callback immediately responds with the pending action and signals
-        the step method to continue with environment logic.
+        This callback waits for an action to be made available by the `step()` method,
+        responds to the service request with that action, and then signals to the
+        `step()` method that the action has been consumed.
+
+        Args:
+            request: The service request (unused).
+            response: The service response to be filled with the action.
+
+        Returns:
+            The service response containing the Twist command.
         """
-        self.node.get_logger().info(
-            f"[Service] Request received (step {self._step_counter})"
-        )
-
-        # Check if we're actually expecting a service request
-        with self._action_lock:
-            if not self._service_active:
+        with self._action_condition:
+            # Wait until an action is available from the step() method.
+            # A timeout is included to prevent the service from hanging indefinitely.
+            if not self._action_condition.wait_for(
+                lambda: self._action_is_available, timeout=5.0
+            ):
                 self.node.get_logger().warn(
-                    "[Service] Received unexpected service request - no step is waiting"
+                    "[Service] Timeout waiting for a new action from the agent. "
+                    "Responding with a zero-velocity command."
                 )
-                # Still respond with zero action to prevent controller hanging
                 response.twist = Twist()
                 return response
 
-            # Fill response with the pending action (thread-safe access)
-            if self._pending_action is not None:
-                twist = get_twist_from_action(self._pending_action)
-                response.twist = twist
-                self.node.get_logger().info(
-                    f"[Service] Responding with action: {self._pending_action}"
-                )
-                self._action_consumed = True  # Mark action as consumed
-                self._service_active = False  # Mark as no longer waiting for service
-            else:
-                self.node.get_logger().warn(
-                    "[Service] No pending action available, sending zero action"
-                )
-                response.twist = Twist()
+            # An action is available, so consume it.
+            assert self._pending_action is not None
+            response.twist = get_twist_from_action(self._pending_action)
+            self.node.get_logger().debug(
+                f"[Service] Responding with action: {self._pending_action}"
+            )
 
-        # Signal the step method that the service request has been handled
-        self._service_request_event.set()
-        self.node.get_logger().info("[Service] Event set, returning response")
+            # Reset flags and notify the waiting step() method.
+            self._pending_action = None
+            self._action_is_available = False
+            self._action_is_consumed = True
+            self._action_condition.notify()
 
         return response
 
@@ -396,53 +378,57 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """
         Resets the environment to its initial state and returns an initial observation.
         """
-        # Superclass call (recommended by gymnasium)
         super().reset(seed=seed)
 
+        # Safely destroy the service if it exists to avoid issues on reset.
         if getattr(self, "_get_command_srv", None):
             self._get_command_srv.destroy()
+            self._get_command_srv = None
 
-        # Clear the service request event to prevent post-reset deadlocks
-        self._service_request_event.clear()
+        # Reset synchronization state
+        with self._action_condition:
+            self._pending_action = None
+            self._action_is_available = False
+            self._action_is_consumed = True
+            self._action_condition.notify_all()  # Wake up any waiting threads
 
         # Reset episode-specific variables
         self._episode += 1
         self._steps_curr_episode = 0
+        self.__is_first_step = True
 
-        self.node.get_logger().info("Resetting environment...")
+        self.node.get_logger().info(
+            f"Resetting environment for episode {self._episode}..."
+        )
 
         self._before_task_reset()
-
         self.reset_task()
-        self._reward_function.reset()
-        self._steps_curr_episode = 0
-
         self._after_task_reset()
 
+        self._reward_function.reset()
+
+        # Get the initial observation after reset.
         obs_dict = self.observation_collector.get_observations(
             is_terminal=False, is_first=True
         )
-        obs_dict[DoneObservation.name] = True
-        self.__is_first_step = True
+        obs_dict[DoneObservation.name] = True  # Indicate it's the first observation
 
-        # Reset action consumption tracking for new episode
-        with self._action_lock:
-            self._action_consumed = True
-            self._step_counter = 0  # Reset step counter
-            self._service_active = False  # Ensure service is marked as inactive
-        return {}
-        # return self._encode_observation(obs_dict), {}
+        info = {}  # Standard Gymnasium practice to return an empty info dict on reset
+        return self._encode_observation(obs_dict), info
 
     def close(self):
         """Cleans up resources, like ROS2 services and subscribers."""
+        self.node.get_logger().info(
+            "Closing environment and shutting down ROS components."
+        )
         self._shutdown_event.set()
         if self._spin_thread and self._spin_thread.is_alive():
             self._spin_thread.join()
 
         self.observation_collector.shutdown()
-        if self._get_command_srv:
+        if getattr(self, "_get_command_srv", None):
             self._get_command_srv.destroy()
-        if self._reset_task_srv:
+        if getattr(self, "_reset_task_srv", None):
             self._reset_task_srv.destroy()
 
     def reset_task(self):
