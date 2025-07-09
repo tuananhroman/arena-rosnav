@@ -62,10 +62,10 @@ repositories:
     url: https://github.com/turtlebot/turtlebot4_simulator.git
     version: humble
 
-  planners/rosnav_rl:
-    type: git
-    url: https://github.com/Arena-Rosnav/rosnav-rl.git
-    version: humble
+#  planners/rosnav_rl:
+#    type: git
+#    url: https://github.com/Arena-Rosnav/rosnav-rl.git
+#    version: humble
     
 #  arena/utils/3rd-party-robot-packages:
 #    type: git
