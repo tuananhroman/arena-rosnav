@@ -25,7 +25,7 @@ agent_cfg:
         batch_size: 256  # Number of samples per gradient update
         clip_range: 0.2  # Clipping parameter for PPO (limits policy update size)
         clip_range_vf: null  # Clipping parameter for value function (if None, no clipping)
-        device: auto  # Device to use for training (cpu, cuda, auto)
+        device: cuda  # Device to use for training (cpu, cuda, auto)
         ent_coef: 0.0  # Entropy coefficient for the loss calculation - higher values encourage exploration
         gae_lambda: 0.95  # Lambda for generalized advantage estimation - balances bias vs. variance
         gamma: 0.99  # Discount factor for future rewards (0-1)
@@ -86,7 +86,7 @@ arena_cfg:
     debug_mode: true  # Enable debugging features (no saving, no wandb, simplified multiprocessing)
     goal_radius: 0.5  # Radius within which the goal is considered reached
     max_num_moves_per_eps: 200  # Maximum number of steps per episode before termination
-    n_envs: 2  # Number of parallel environments for training
+    n_envs: 1  # Number of parallel environments for training
     n_timesteps: 4000000  # Total number of timesteps to train for
     no_gpu: false  # Set to true to force CPU training even if GPU is available
     safety_distance: 1.0  # Minimum distance to maintain from obstacles for safety
