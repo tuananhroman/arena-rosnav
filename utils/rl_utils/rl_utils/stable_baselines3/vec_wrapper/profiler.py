@@ -1,5 +1,4 @@
 import pyinstrument
-import rospy
 from stable_baselines3.common.vec_env import VecEnvWrapper
 from std_msgs.msg import Bool
 

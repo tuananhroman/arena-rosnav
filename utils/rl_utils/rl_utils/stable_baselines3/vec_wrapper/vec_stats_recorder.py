@@ -4,7 +4,8 @@ import numpy as np
 from rosnav_rl.observations import LastActionCollector, DONE_REASONS
 from stable_baselines3.common.vec_env import VecEnv, VecEnvWrapper
 from stable_baselines3.common.vec_env.base_vec_env import VecEnvObs
-import rospy
+
+# import rospy
 import wandb
 
 BATCHED_ZERO_ACTION = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)

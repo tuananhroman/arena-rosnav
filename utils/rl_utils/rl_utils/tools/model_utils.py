@@ -1,7 +1,6 @@
 import re
 from typing import List, TYPE_CHECKING
 
-import rospy
 import torch
 
 from rl_utils.stable_baselines3.eval_callbacks.staged_train_callback import (
@@ -22,8 +21,14 @@ import wandb
 if TYPE_CHECKING:
     from rl_utils.cfg import TrainingCfg
 
-    
-def setup_wandb(run_name: str=None, group: str = None, config: "TrainingCfg"=None, agent_id:str=None, to_watch: List[torch.nn.Module] = []) -> None:
+
+def setup_wandb(
+    run_name: str = None,
+    group: str = None,
+    config: "TrainingCfg" = None,
+    agent_id: str = None,
+    to_watch: List[torch.nn.Module] = [],
+) -> None:
     """
     Set up Weights and Biases (wandb) for tracking and visualizing training.
 
