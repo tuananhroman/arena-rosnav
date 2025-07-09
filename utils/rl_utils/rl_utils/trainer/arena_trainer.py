@@ -80,12 +80,16 @@ class ArenaTrainer(ABC):
         self.config = config
         self.__resume = resume
 
+        self._setup_supervisor_node()
+
         self._register_default_hooks()
         self._register_framework_specific_hooks()
         self._setup_trainer()
 
     def _setup_supervisor_node(self):
-        self._supervisor_node = SupervisorNode(name="arena_trainer", config=self.config)
+        self._supervisor_node = SupervisorNode(
+            node_name="arena_trainer", training_cfg=self.config
+        )
 
     @bind_hooks(
         before_stage=TrainingHookStages.BEFORE_SETUP,
@@ -153,8 +157,8 @@ class ArenaTrainer(ABC):
     @bind_hooks(before_stage=TrainingHookStages.ON_CLOSE)
     def close(self):
         """Clean up and exit."""
-        self._save_model()
-        self.agent.model.env.close()
+        # self._save_model("last_model")
+        self.agent.model.model.env.close()
         sys.exit(0)
 
     def _register_default_hooks(self) -> None:
@@ -238,7 +242,7 @@ class ArenaTrainer(ABC):
 
     @property
     def is_debug_mode(self):
-        return self._supervisor_node.get_parameter_or("debug_mode", False)
+        return self.node.get_parameter_or("debug_mode", False)
 
     @property
     def is_resume(self):

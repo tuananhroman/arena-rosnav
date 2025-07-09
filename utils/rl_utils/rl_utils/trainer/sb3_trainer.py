@@ -3,10 +3,8 @@ from typing import TYPE_CHECKING
 
 import rclpy
 import rl_utils.utils.paths as Paths
-from rl_utils.node import SupervisorNode
 from rl_utils.stable_baselines3.eval_callbacks.initialization import init_sb3_callbacks
 from rl_utils.tools.config import load_training_config
-from rl_utils.tools.constants import SIMULATION_NAMESPACES
 from rl_utils.tools.env_utils import make_envs, sb3_wrap_env
 from rl_utils.tools.model_utils import setup_wandb
 from rl_utils.trainer.arena_trainer import (
@@ -184,14 +182,14 @@ class StableBaselines3Trainer(ArenaTrainer):
             n_envs=self.config.arena_cfg.general.n_envs,
             max_steps=self.config.arena_cfg.general.max_num_moves_per_eps,
             init_env_by_call=not self.config.arena_cfg.general.debug_mode,
-            namespace_fn=SIMULATION_NAMESPACES.TRAIN_NS,
+            namespace_fn=lambda _: "/task_generator_node/jackal",
             simulation_state_container=self.simulation_state_container,
         )
         eval_env_fncs = make_envs(
             node=self._supervisor_node,
             rl_agent=self.agent,
             n_envs=1,
-            namespace_fn=lambda _: SIMULATION_NAMESPACES.EVAL_NS,
+            namespace_fn=lambda _: "/task_generator_node/jackal",
             max_steps=self.config.arena_cfg.callbacks.periodic_evaluation.max_num_moves_per_eps,
             init_env_by_call=False,
             simulation_state_container=self.simulation_state_container,
@@ -282,17 +280,13 @@ class StableBaselines3Trainer(ArenaTrainer):
 
 def main():
     rclpy.init()
-    config = load_training_config("sb_training_config.yaml")
+    config = load_training_config("sb_training_config")
 
     trainer = StableBaselines3Trainer(config)
 
-    try:
-        trainer.train()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        trainer.close()
-        rclpy.shutdown()
+    trainer.train()
+    trainer.close()
+    rclpy.shutdown()
 
 
 if __name__ == "__main__":

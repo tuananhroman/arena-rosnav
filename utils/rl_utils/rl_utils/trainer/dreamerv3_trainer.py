@@ -1,15 +1,17 @@
 from functools import partial
 from typing import Tuple
 
-import rl_utils.cfg as arena_cfg
 import rosnav_rl
 import rosnav_rl.model.dreamerv3 as dreamerv3
+from rosnav_rl import SupportedRLFrameworks
+
+import rl_utils.cfg as arena_cfg
 from rl_utils.tools.config import load_training_config
-from rl_utils.tools.constants import SIMULATION_NAMESPACES
+
+# from rl_utils.tools.constants import SIMULATION_NAMESPACES
 from rl_utils.tools.env_utils import make_envs
 from rl_utils.tools.model_utils import setup_wandb
 from rl_utils.trainer.arena_trainer import ArenaTrainer
-from rosnav_rl import SupportedRLFrameworks
 
 
 class DreamerV3Trainer(ArenaTrainer):
@@ -28,6 +30,7 @@ class DreamerV3Trainer(ArenaTrainer):
     Note:
         This class requires a configuration of type ArenaDreamerV3Cfg.
     """
+
     __framework = SupportedRLFrameworks.DREAMER_V3
     environment: Tuple[dreamerv3.Parallel, dreamerv3.Parallel]
 
@@ -40,7 +43,10 @@ class DreamerV3Trainer(ArenaTrainer):
         super().__init__(config, config.resume)
 
     def _setup_monitoring(self, *args, **kwargs):
-        if self.config.arena_cfg.monitoring.wandb and not self.config.arena_cfg.general.debug_mode:
+        if (
+            self.config.arena_cfg.monitoring.wandb
+            and not self.config.arena_cfg.general.debug_mode
+        ):
             setup_wandb(
                 run_name=self.config.agent_cfg.name,
                 group=self.config.arena_cfg.monitoring.wandb.group,
@@ -119,10 +125,7 @@ class DreamerV3Trainer(ArenaTrainer):
         )
 
         if self.config.arena_cfg.general.debug_mode:
-            train_envs = [
-                dreamerv3.Damy(init_fnc())
-                for init_fnc in train_env_fncs
-            ]
+            train_envs = [dreamerv3.Damy(init_fnc()) for init_fnc in train_env_fncs]
         else:
             train_envs = [
                 dreamerv3.Parallel(lambda: init_fnc(), "daemon")
@@ -145,9 +148,7 @@ class DreamerV3Trainer(ArenaTrainer):
         Returns:
             None. The method directly calls the agent's train method.
         """
-        self.agent.train(
-            train_envs=self.environment[0], eval_envs=self.environment[1]
-        )
+        self.agent.train(train_envs=self.environment[0], eval_envs=self.environment[1])
 
 
 if __name__ == "__main__":
