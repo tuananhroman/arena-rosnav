@@ -7,7 +7,7 @@ from rl_utils.cfg import (
     MonitoringCfg,
     ProfilingCfg,
 )
-from rl_utils.envs.flatland_gymnasium_env import FlatlandEnv
+
 import rl_utils.envs as arena_envs
 
 # from rl_utils.envs.unity import UnityEnv
@@ -70,7 +70,6 @@ def _init_env_fnc(
     max_steps_per_episode: int,
     init_by_call: bool = False,
     obs_unit_kwargs: dict = None,
-    task_generator_kwargs: dict = None,
     seed: int = 0,
     wrappers: List[Callable[[Tuple[Type[gym.Wrapper], Any]], gym.Wrapper]] = None,
 ) -> callable:
@@ -85,8 +84,6 @@ def _init_env_fnc(
             max_steps_per_episode=max_steps_per_episode,
             init_by_call=init_by_call,
             obs_unit_kwargs=obs_unit_kwargs,
-            task_generator_kwargs=task_generator_kwargs,
-            start_ros_node=False,
         )
         for wrapper in wrappers or []:
             env = wrapper(env)
@@ -156,7 +153,7 @@ def sb3_wrap_env(
         )
 
     train_env = create_train_env()
-    eval_env = create_eval_env()
+    eval_env = train_env
 
     # train_env = apply_vec_framestack(train_env)
     # eval_env = apply_vec_framestack(eval_env)
@@ -164,11 +161,11 @@ def sb3_wrap_env(
     # train_env = apply_vec_normalize(train_env, is_training=True)
     # eval_env = apply_vec_normalize(eval_env, is_training=False)
 
-    train_env = apply_vec_stats_recorder(train_env)
-    eval_env = apply_vec_stats_recorder(eval_env)
+    # train_env = apply_vec_stats_recorder(train_env)
+    # eval_env = apply_vec_stats_recorder(eval_env)
 
-    train_env = apply_profiling(train_env)
-    eval_env = apply_profiling(eval_env, enable_subscribers=False)
+    # train_env = apply_profiling(train_env)
+    # eval_env = apply_profiling(eval_env, enable_subscribers=False)
 
     return train_env, eval_env
 

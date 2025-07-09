@@ -238,7 +238,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """Encodes the given observation using the model space encoder."""
         return self._model_space_manager.encode_observation(observation, **kwargs)
 
-    def _wait_for_action_consumption(self, timeout: float = 1.0) -> None:
+    def _wait_for_action_consumption(self, timeout: float = 30.0) -> None:
         """
         Waits for the `get_command` service to consume the action set by `step()`.
 
@@ -413,7 +413,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         )
         obs_dict[DoneObservation.name] = True  # Indicate it's the first observation
 
-        info = {}  # Standard Gymnasium practice to return an empty info dict on reset
+        info = {}
         return self._encode_observation(obs_dict), info
 
     def close(self):
