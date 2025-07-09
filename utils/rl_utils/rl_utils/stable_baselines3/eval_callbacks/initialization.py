@@ -1,8 +1,8 @@
 from typing import TYPE_CHECKING, List
 
-from rl_utils.stable_baselines3.eval_callbacks.staged_train_callback import (
-    InitiateNewTrainStage,
-)
+# from rl_utils.stable_baselines3.eval_callbacks.staged_train_callback import (
+#     InitiateNewTrainStage,
+# )
 from rosnav_rl.utils.stable_baselines3.callbacks import (
     RosnavEvalCallback,
     StopTrainingOnRewardThreshold,
@@ -11,7 +11,7 @@ from rosnav_rl.utils.stable_baselines3.callbacks import (
 from stable_baselines3.common.vec_env import VecEnv
 
 if TYPE_CHECKING:
-    from rl_utils.cfg import CallbacksCfg
+    from rl_utils.cfg.sb3_cfg import ArenaCallbacksCfg
 
 
 def init_sb3_callbacks(
@@ -20,7 +20,7 @@ def init_sb3_callbacks(
     tm_modules: List[str],
     model_save_path: str,
     eval_log_path: str,
-    callback_cfg: "CallbacksCfg",
+    callback_cfg: "ArenaCallbacksCfg",
     debug_mode: bool,
 ) -> RosnavEvalCallback:
     """
@@ -45,14 +45,15 @@ def init_sb3_callbacks(
     stop_train_cfg = callback_cfg.stop_training_on_threshold
     periodic_eval_cfg = callback_cfg.periodic_evaluation
 
-    trainstage_cb = InitiateNewTrainStage(
-        n_envs=n_envs,
-        treshhold_type=curriculum_cfg.threshold_type,
-        upper_threshold=curriculum_cfg.upper_threshold,
-        lower_threshold=curriculum_cfg.lower_threshold,
-        activated="staged" in tm_modules,
-        verbose=1,
-    )
+    # TODO: Implement curriculum learning callback
+    # trainstage_cb = InitiateNewTrainStage(
+    #     n_envs=n_envs,
+    #     treshhold_type=curriculum_cfg.threshold_type,
+    #     upper_threshold=curriculum_cfg.upper_threshold,
+    #     lower_threshold=curriculum_cfg.lower_threshold,
+    #     activated="staged" in tm_modules,
+    #     verbose=1,
+    # )
 
     stoptraining_cls = (
         StopTrainingOnRewardThreshold
@@ -75,7 +76,7 @@ def init_sb3_callbacks(
         log_path=eval_log_path,
         best_model_save_path=None if debug_mode else model_save_path,
         deterministic=True,
-        callback_on_eval_end=trainstage_cb,
+        # callback_on_eval_end=trainstage_cb,
         callback_on_new_best=stoptraining_cb,
     )
     return eval_cb
