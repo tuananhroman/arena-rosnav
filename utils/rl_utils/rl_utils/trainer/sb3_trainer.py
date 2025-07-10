@@ -208,6 +208,7 @@ class StableBaselines3Trainer(ArenaTrainer):
     def _setup_callbacks(self, environment: SB3Environment) -> None:
         """Initialize training callbacks."""
         self.eval_cb = init_sb3_callbacks(
+            node=self._supervisor_node,
             eval_env=environment.eval_env,
             n_envs=self.config.arena_cfg.general.n_envs,
             tm_modules=self.config.arena_cfg.task.tm_modules,

@@ -88,7 +88,7 @@ class ArenaTrainer(ABC):
 
     def _setup_supervisor_node(self):
         self._supervisor_node = SupervisorNode(
-            node_name="arena_trainer", training_cfg=self.config
+            node_name="Arena_Trainer", training_cfg=self.config
         )
 
     @bind_hooks(
