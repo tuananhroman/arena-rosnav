@@ -54,7 +54,7 @@ opencv-python-headless = "^4.8"  # applr
 [tool.poetry.group.training]
 optional = true
 [tool.poetry.group.training.dependencies]
-rosnav_rl = {path = "../../planners/rosnav_rl", develop = true}
+rosnav_rl = {path = "../../planners/rosnav_rl/rosnav_rl", develop = true}
 
 [tool.poetry.group.dev.dependencies]
 lark = "^1.1.9"
