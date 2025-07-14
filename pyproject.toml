@@ -9,7 +9,7 @@ authors = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "==3.10.*"
 rospkg = "^1.4.0"
 PyYAML = "^6.0"
 filelock = "^3.7.1"
@@ -32,6 +32,7 @@ setuptools = "<80"
 pydantic = "^2.11.5"
 pillow = "^11.2.1"
 requests = "^2.32.4"
+usd-core = "^25.5.1"
 
 
 [tool.poetry.group.planners]
