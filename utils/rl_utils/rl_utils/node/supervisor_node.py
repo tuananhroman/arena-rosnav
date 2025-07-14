@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+import threading
 
 from rl_utils.cfg import TrainingCfg
 
@@ -10,12 +11,34 @@ class SupervisorNode(Node):
     # subscribes to relevant topics and manages the training lifecycle.
     # communicates with other nodes to coordinate training tasks (task reset, curriculum management, etc.).
 
-    def __init__(self, node_name: str, training_cfg: TrainingCfg):
+    def __init__(self, node_name: str):
         super().__init__(node_name)
-        self.training_cfg = training_cfg
         self.get_logger().info(f"{node_name} has been started.")
+        self._shutdown_event = threading.Event()
+        self._spin_thread = threading.Thread(target=self._spin_loop)
 
-    ...
+    def start_spinning(self):
+        """Starts the spin loop in a background thread."""
+        if not self._spin_thread.is_alive():
+            self._shutdown_event.clear()
+            self._spin_thread.start()
+            self.get_logger().info("SupervisorNode spinning started.")
+
+    def stop_spinning(self):
+        """Stops the spin loop."""
+        if self._spin_thread.is_alive():
+            self._shutdown_event.set()
+            self._spin_thread.join()
+            self.get_logger().info("SupervisorNode spinning stopped.")
+
+    def _spin_loop(self):
+        """Continuously spins the ROS2 node in a background thread."""
+        while not self._shutdown_event.is_set():
+            rclpy.spin_once(self, timeout_sec=0.1)
+
+    def destroy_node(self):
+        self.stop_spinning()
+        super().destroy_node()
 
 
 def main(args=None):
