@@ -1,14 +1,20 @@
-from typing import List, Tuple, Type, Union, Callable, Any
+from typing import Any, Callable, List, Tuple, Type, Union
 
 import gym
 import rosnav_rl
+from rosnav_rl.utils.rostopic import Namespace
+from stable_baselines3.common.utils import set_random_seed
+from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+
+import rl_utils.envs as arena_envs
 from rl_utils.cfg import (
     GeneralCfg,
     MonitoringCfg,
     ProfilingCfg,
 )
-
-import rl_utils.envs as arena_envs
+from rl_utils.envs.wrappers import TimeSyncWrapper
+from rl_utils.node import SupervisorNode
 
 # from rl_utils.envs.unity import UnityEnv
 from rl_utils.stable_baselines3.vec_wrapper import (
@@ -17,12 +23,6 @@ from rl_utils.stable_baselines3.vec_wrapper import (
     VecStatsRecorder,
 )
 from rl_utils.utils.constants import Simulator
-from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv
-
-from rosnav_rl.utils.rostopic import Namespace
-from rl_utils.node import SupervisorNode
 
 
 def load_vec_framestack(stack_size: int, env: VecEnv) -> VecEnv:
@@ -94,6 +94,7 @@ def _init_env_fnc(
 
 
 def sb3_wrap_env(
+    node: SupervisorNode,
     train_env_fncs: List[callable],
     eval_env_fncs: List[callable],
     general_cfg: GeneralCfg,
@@ -141,6 +142,7 @@ def sb3_wrap_env(
     def apply_profiling(env: VecEnv, enable_subscribers: bool = True) -> VecEnv:
         return (
             ProfilingVecEnv(
+                node=node,
                 env=env,
                 profile_step=profiling_cfg.do_profile_step,
                 profile_reset=profiling_cfg.do_profile_reset,

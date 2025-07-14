@@ -1,6 +1,8 @@
 import pyinstrument
 from stable_baselines3.common.vec_env import VecEnvWrapper
-from std_msgs.msg import Bool
+
+# from std_msgs.msg import Bool
+from rl_utils.node import SupervisorNode
 
 
 class ProfilingVecEnv(VecEnvWrapper):
@@ -18,15 +20,17 @@ class ProfilingVecEnv(VecEnvWrapper):
 
     def __init__(
         self,
+        node: SupervisorNode,
         env,
-        profile_step: bool = False,
-        profile_reset: bool = False,
+        profile_step: bool = True,
+        profile_reset: bool = True,
         per_call: bool = True,
         print_stats: bool = True,
         log_file: str = None,
         enable_subscribers: bool = True,
     ):
         super().__init__(env)
+        self._node = node
         self._step_profiler = pyinstrument.Profiler()
         self._reset_profiler = pyinstrument.Profiler()
 
@@ -37,27 +41,27 @@ class ProfilingVecEnv(VecEnvWrapper):
         self._print_stats = print_stats
         self._log_file = log_file
 
-        if enable_subscribers:
-            # Set up subscribers
-            rospy.Subscriber(
-                "/profiler/profile_step", Bool, self._profile_step_callback
-            )
-            rospy.Subscriber(
-                "/profiler/profile_reset", Bool, self._profile_reset_callback
-            )
+    #     if enable_subscribers:
+    #         # Set up subscribers
+    #         rospy.Subscriber(
+    #             "/profiler/profile_step", Bool, self._profile_step_callback
+    #         )
+    #         rospy.Subscriber(
+    #             "/profiler/profile_reset", Bool, self._profile_reset_callback
+    #         )
 
-    def _profile_step_callback(self, msg):
-        self._profile_method_step = msg.data
-        rospy.loginfo(f"Profile step set to: {self._profile_method_step}")
+    # def _profile_step_callback(self, msg):
+    #     self._profile_method_step = msg.data
+    #     rospy.loginfo(f"Profile step set to: {self._profile_method_step}")
 
-    def _profile_reset_callback(self, msg):
-        self._profile_method_reset = msg.data
-        rospy.loginfo(f"Profile reset set to: {self._profile_method_reset}")
+    # def _profile_reset_callback(self, msg):
+    #     self._profile_method_reset = msg.data
+    #     rospy.loginfo(f"Profile reset set to: {self._profile_method_reset}")
 
     def _output_stats(self, profiler: pyinstrument.Profiler, method_name: str):
         if self._print_stats:
-            rospy.loginfo(f"Profiling stats for {method_name}:")
-            rospy.loginfo(profiler.output_text(unicode=True, color=True))
+            self._node._logger.info(f"Profiling stats for {method_name}:")
+            self._node._logger.info(profiler.output_text(unicode=True, color=True))
 
         if self._log_file:
             with open(self._log_file, "a") as f:

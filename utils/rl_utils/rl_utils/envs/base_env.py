@@ -129,10 +129,6 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self._action_is_available = False  # True when step() provides an action
         self._action_is_consumed = True  # True when service consumes the action
 
-        self._shutdown_event = threading.Event()
-        self._spin_thread = threading.Thread(target=self._spin_loop)
-        self._spin_thread.start()
-
         if not init_by_call:
             self._initialize_environment()
 
@@ -142,11 +138,6 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self._setup_ros_services()
 
         self._setup_observation_manager()
-
-    def _spin_loop(self):
-        """Continuously spins the ROS2 node in a background thread."""
-        while not self._shutdown_event.is_set():
-            rclpy.spin_once(self.node, timeout_sec=0.1)
 
     def _setup_ros_services(self):
         """Creates ROS2 services and clients required for training."""
@@ -162,6 +153,8 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self.node.get_logger().warn(
                 f"Service '{task_srv_name}' not available after 3 seconds."
             )
+
+        self._setup_action_service()
 
     def _setup_action_service(self):
         service_name = str(self.ns("get_command"))
@@ -279,8 +272,8 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         6. Calculates the reward and determines if the episode has terminated.
         7. Encodes the observation and returns the standard Gymnasium step tuple.
         """
-        if self.__is_first_step:
-            self._setup_action_service()
+        # if self.__is_first_step:
+        #     self._setup_action_service()
 
         decoded_action = self._decode_action(action)
 
@@ -381,9 +374,9 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         super().reset(seed=seed)
 
         # Safely destroy the service if it exists to avoid issues on reset.
-        if getattr(self, "_get_command_srv", None):
-            self._get_command_srv.destroy()
-            self._get_command_srv = None
+        # if getattr(self, "_get_command_srv", None):
+        #     self._get_command_srv.destroy()
+        #     self._get_command_srv = None
 
         # Reset synchronization state
         with self._action_condition:
@@ -421,9 +414,6 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.node.get_logger().info(
             "Closing environment and shutting down ROS components."
         )
-        self._shutdown_event.set()
-        if self._spin_thread and self._spin_thread.is_alive():
-            self._spin_thread.join()
 
         self.observation_collector.shutdown()
         if getattr(self, "_get_command_srv", None):

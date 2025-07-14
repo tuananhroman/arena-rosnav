@@ -1,18 +1,21 @@
 import gymnasium as gym
 import rclpy
+import time
 from rclpy.node import Node
 from rclpy.time import Time  # Import Time for type hinting
 
 
 class TimeSyncWrapper(gym.Wrapper):
-    def __init__(self, env, control_hz: float = 10.0):
+    def __init__(self, env, control_hz: float = 10.0, warning_slop: float = 0.1):
         """
         A Gym Wrapper to synchronize step calls to a specific control frequency using ROS 2 time.
 
         Args:
             env: The Gym environment to wrap.
-            node: A rclpy.node.Node instance to access ROS clock and for spinning.
             control_hz: The desired control frequency in Hz.
+            warning_slop: A factor to allow for a small deviation in control frequency before issuing a warning.
+                          E.g., a value of 0.1 means that a warning will be issued if the actual frequency
+                          is off by more than 10% of the desired interval.
         """
         super().__init__(env)
         if not isinstance(env.node, Node):
@@ -24,6 +27,7 @@ class TimeSyncWrapper(gym.Wrapper):
             raise ValueError("control_hz must be positive.")
         # Store interval in nanoseconds for precise comparison with rclpy.time.Time objects
         self.control_interval_nanosec = int(1e9 / control_hz)
+        self.warning_slop_nanosec = int(self.control_interval_nanosec * warning_slop)
 
         # Time when the last env.step() was allowed to initiate.
         # Initialized to current time, so the first step call will also adhere to the interval logic.
@@ -40,6 +44,17 @@ class TimeSyncWrapper(gym.Wrapper):
         until the control interval has passed since the last step initiation.
         """
         current_time = self._now()
+        elapsed_nanosec = (current_time - self.last_step_initiation_time).nanoseconds
+
+        # Warn if the actual interval is longer than the desired one, indicating a missed control frequency.
+        # We check this before the waiting loop.
+        if elapsed_nanosec > self.control_interval_nanosec + self.warning_slop_nanosec:
+            desired_hz = 1e9 / self.control_interval_nanosec
+            actual_hz = 1e9 / elapsed_nanosec
+            self.node.get_logger().warn(
+                f"Control frequency missed! "
+                f"Desired: {desired_hz:.2f}Hz, Actual: {actual_hz:.2f}Hz"
+            )
 
         # Wait if the time elapsed since the last step initiation is less than the control interval.
         # The loop continues as long as the duration since the last step is less than our target interval.
@@ -47,10 +62,9 @@ class TimeSyncWrapper(gym.Wrapper):
         while (
             current_time - self.last_step_initiation_time
         ).nanoseconds < self.control_interval_nanosec:
-            # Spin the node for a very short duration to allow ROS callbacks
-            # and to act as a small sleep for this polling loop.
-            # A very small positive timeout is needed for spin_once to not block indefinitely if there are no events.
-            rclpy.spin_once(self.node, timeout_sec=0.0001)  # Spin for 0.1ms
+            # Sleep for a very short duration.
+            # The SupervisorNode handles spinning in a background thread.
+            time.sleep(0.0001)  # Sleep for 0.1ms
             current_time = self._now()
 
         # Update the initiation time for the current step (which is now allowed to proceed)
@@ -70,7 +84,3 @@ class TimeSyncWrapper(gym.Wrapper):
         reset_return_value = self.env.reset(**kwargs)
         self.last_step_initiation_time = self._now()
         return reset_return_value
-
-    # Note: If your environment or the underlying ROS node needs specific shutdown,
-    # you might want to add a close() method here.
-    # The lifecycle of the passed 'node' is assumed to be managed externally.
