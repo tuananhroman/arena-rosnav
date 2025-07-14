@@ -1,6 +1,6 @@
-import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Type
 
 import rl_utils.cfg as arena_cfg
 import rl_utils.utils.paths as Paths
@@ -37,7 +37,7 @@ class ArenaTrainer(ABC):
 
     Attributes:
         __framework (SupportedRLFrameworks): The RL framework being used (e.g., SB3, RLlib).
-        config (TrainingCfg): Configuration settings for the training process.
+        config_cls (TrainingCfg): Configuration settings for the training process.
         paths (PathsDict): Dictionary containing paths for model saving, logging, etc.
         simulation_state_container (SimulationStateContainer): Container for simulation state data.
         agent (RL_Agent): The reinforcement learning agent being trained.
@@ -59,6 +59,7 @@ class ArenaTrainer(ABC):
     """
 
     __framework: SupportedRLFrameworks
+    _config_type: Type[arena_cfg.ArenaBaseCfg]
 
     config: arena_cfg.TrainingCfg
     paths: PathsDict
@@ -77,6 +78,7 @@ class ArenaTrainer(ABC):
         Args:
             config (TrainingCfg): The configuration object for training.
         """
+        self._validate_config(config)
         self.config = config
         self.__resume = resume
 
@@ -86,10 +88,16 @@ class ArenaTrainer(ABC):
         self._register_framework_specific_hooks()
         self._setup_trainer()
 
+    def _validate_config(self, config: arena_cfg.TrainingCfg) -> None:
+        if not isinstance(config.arena_cfg, self._config_type):
+            raise TypeError(
+                f"Invalid configuration type: {type(config.arena_cfg)} for {self.__framework}. "
+                f"Expected one of: {self._config_type}"
+            )
+
     def _setup_supervisor_node(self):
-        self._supervisor_node = SupervisorNode(
-            node_name="Arena_Trainer", training_cfg=self.config
-        )
+        self._supervisor_node = SupervisorNode(node_name="Arena_Trainer")
+        self._supervisor_node.start_spinning()
 
     @bind_hooks(
         before_stage=TrainingHookStages.BEFORE_SETUP,
@@ -156,10 +164,9 @@ class ArenaTrainer(ABC):
 
     @bind_hooks(before_stage=TrainingHookStages.ON_CLOSE)
     def close(self):
-        """Clean up and exit."""
-        # self._save_model("last_model")
-        self.agent.model.model.env.close()
-        sys.exit(0)
+        self.environment.close()
+        self._supervisor_node.stop_spinning()
+        self._supervisor_node.destroy_node()
 
     def _register_default_hooks(self) -> None:
         """Register default hooks common across implementations."""
@@ -208,21 +215,6 @@ class ArenaTrainer(ABC):
         self.agent.model.train()
         self._save_model(checkpoint="last_model")
 
-    @abstractmethod
-    def _setup_agent(self, *args, **kwargs) -> None:
-        """Initialize the RL agent."""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def _setup_environment(self, *args, **kwargs) -> None:
-        """Setup training Gym environment."""
-        raise NotImplementedError()
-
-    @abstractmethod
-    def _setup_monitoring(self, *args, **kwargs) -> None:
-        """Setup monitoring tools."""
-        raise NotImplementedError()
-
     def _setup_simulation_state_container(self, *args, **kwargs) -> None:
         """Initialize agent state container."""
         self.simulation_state_container = get_arena_states(
@@ -239,6 +231,21 @@ class ArenaTrainer(ABC):
         self.agent_state_container: rosnav_rl.AgentStateContainer = (
             self.simulation_state_container.to_agent_state_container()
         )
+
+    @abstractmethod
+    def _setup_agent(self, *args, **kwargs) -> None:
+        """Initialize the RL agent."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _setup_environment(self, *args, **kwargs) -> None:
+        """Setup training Gym environment."""
+        raise NotImplementedError()
+
+    @abstractmethod
+    def _setup_monitoring(self, *args, **kwargs) -> None:
+        """Setup monitoring tools."""
+        raise NotImplementedError()
 
     @property
     def is_debug_mode(self):

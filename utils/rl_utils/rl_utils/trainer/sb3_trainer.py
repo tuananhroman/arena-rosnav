@@ -1,8 +1,12 @@
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from functools import partial
 
 import rclpy
+from stable_baselines3.common.vec_env.base_vec_env import VecEnv
+
+import rl_utils.cfg as arena_cfg
 import rl_utils.utils.paths as Paths
+from rl_utils.envs.wrappers import TimeSyncWrapper
 from rl_utils.stable_baselines3.eval_callbacks.initialization import init_sb3_callbacks
 from rl_utils.tools.config import load_training_config
 from rl_utils.tools.env_utils import make_envs, sb3_wrap_env
@@ -13,16 +17,17 @@ from rl_utils.trainer.arena_trainer import (
     TrainingHookStages,
 )
 from rl_utils.utils.dynamic_reconfigure import set_dynamic_reconfigure_parameter
-from stable_baselines3.common.vec_env.base_vec_env import VecEnv
-
-if TYPE_CHECKING:
-    import rl_utils.cfg as arena_cfg
 
 
 @dataclass
 class SB3Environment:
     train_env: VecEnv
     eval_env: VecEnv
+
+    def close(self) -> None:
+        """Close the training and evaluation environments."""
+        self.train_env.close()
+        self.eval_env.close()
 
 
 class StableBaselines3Trainer(ArenaTrainer):
@@ -62,17 +67,8 @@ class StableBaselines3Trainer(ArenaTrainer):
     """
 
     __framework = SupportedRLFrameworks.STABLE_BASELINES3
+    _config_type = arena_cfg.ArenaSB3Cfg
     environment: SB3Environment
-
-    def __init__(self, config: "arena_cfg.TrainingCfg") -> None:
-        import rl_utils.cfg as arena_cfg
-
-        assert isinstance(config.arena_cfg, arena_cfg.ArenaSB3Cfg), (
-            f"Invalid configuration type: {type(config.arena_cfg)} "
-            f"for {self.__framework}"
-        )
-        self.config = config
-        super().__init__(config, config.resume)
 
     def _register_framework_specific_hooks(self) -> None:
         """Register framework specific hooks for training.
@@ -184,6 +180,7 @@ class StableBaselines3Trainer(ArenaTrainer):
             init_env_by_call=not self.config.arena_cfg.general.debug_mode,
             namespace_fn=lambda _: "/task_generator_node/jackal",
             simulation_state_container=self.simulation_state_container,
+            wrappers=[partial(TimeSyncWrapper, control_hz=1)],
         )
         eval_env_fncs = make_envs(
             node=self._supervisor_node,
@@ -193,8 +190,10 @@ class StableBaselines3Trainer(ArenaTrainer):
             max_steps=self.config.arena_cfg.callbacks.periodic_evaluation.max_num_moves_per_eps,
             init_env_by_call=False,
             simulation_state_container=self.simulation_state_container,
+            wrappers=[partial(TimeSyncWrapper, control_hz=1)],
         )
         train_env, eval_env = sb3_wrap_env(
+            node=self._supervisor_node,
             train_env_fncs=train_env_fncs,
             eval_env_fncs=eval_env_fncs,
             general_cfg=self.config.arena_cfg.general,

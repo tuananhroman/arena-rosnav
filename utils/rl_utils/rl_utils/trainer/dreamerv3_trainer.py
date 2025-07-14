@@ -32,14 +32,10 @@ class DreamerV3Trainer(ArenaTrainer):
     """
 
     __framework = SupportedRLFrameworks.DREAMER_V3
+    _config_type = arena_cfg.ArenaBaseCfg
     environment: Tuple[dreamerv3.Parallel, dreamerv3.Parallel]
 
     def __init__(self, config: arena_cfg.TrainingCfg):
-        assert isinstance(
-            config.arena_cfg, arena_cfg.ArenaBaseCfg
-        ), f"Invalid configuration type: {type(config.arena_cfg)} for {self.__framework}"
-        self.config = config
-        _dict = config.agent_cfg.model_dump()
         super().__init__(config, config.resume)
 
     def _setup_monitoring(self, *args, **kwargs):
