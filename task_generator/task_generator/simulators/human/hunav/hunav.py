@@ -11,6 +11,7 @@ from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
 from hunav_msgs.srv import (ComputeAgent, ComputeAgents, DeleteActors,
                             GetAgents, GetWalls, MoveAgent, ResetAgents)
+from arena_people_msgs.msg import Pedestrian, Pedestrians
 
 from task_generator.constants import Constants
 from task_generator.shared import (Model, ModelType, ModelWrapper, Obstacle,
@@ -204,6 +205,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._agents_container = Agents()  # Container to hold all registered agents
         self._get_agents_container = Agents()  # Container specifically just to send the Agent attributes to Hunavsystemplugin
         self._agents_container.header.frame_id = "map"
+        self._arena_pedestrians_container = Pedestrians()
+        self._arena_pedestrians_container.header.frame_id = "map"
         self._logger.debug("Collections initialized")
 
         # Setup services
@@ -213,6 +216,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
             self._logger.error("Service setup failed!")
         else:
             self._logger.info("Services setup complete")
+        arena_peds_success = self._setup_arena_peds_publisher()
+        if not arena_peds_success:
+            self._logger.error("Arena peds publisher setup failed!")
+        else:
+            self._logger.error("Arena peds publisher setup complete")
 
         # Wait to be sure that all services are ready
         self._logger.debug("Waiting for services to be ready...")
@@ -222,6 +230,10 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info("=== HUNAVMANAGER INIT COMPLETE ===")
 
         self._gz_plugin_spawned: bool = False
+        
+
+
+
 
     @property
     def _simulator_type(self) -> Constants.SimSimulator:
@@ -335,6 +347,31 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info("=== SETUP_SERVICES COMPLETE ===")
         return True
 
+    def _setup_arena_peds_publisher(self):
+        """Setup arena_peds publisher and timer - separate from services"""
+        try:
+            self._logger.info("=== ARENA PEDS PUBLISHER SETUP START ===")
+            
+            # Create publisher
+            self._arena_peds_publisher = self.node.create_publisher(
+                Pedestrians,
+                self._namespace('arena_peds'),
+                10
+            )
+            
+            # Create timer
+            self._arena_peds_timer = self.node.create_timer(
+                0.1,  # 10 Hz
+                self._publish_arena_peds_callback
+            )
+            
+            self._logger.info("=== ARENA PEDS PUBLISHER SETUP COMPLETE ===")
+            return True
+            
+        except Exception as e:
+            self._logger.error(f"Arena peds publisher setup failed: {e}")
+            return False
+
     def _get_agents_callback(self, request, response):
         """Handle get_agents service request - return UNMODIFIED agents"""
         try:
@@ -412,6 +449,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 self._get_agents_container.agents.append(agent_msg)
                 self._agents_container.agents.append(agent_msg)
                 # self._logger.error(f"spawn_dynamic_obstacle_agents_container {self._agents_container}")
+                
+                # Create separate arena pedestrian
+                arena_pedestrian = self._create_arena_pedestrian(hunav_obstacle, unique_id)
+                self._arena_pedestrians_container.pedestrians.append(arena_pedestrian)
+                self._logger.error(f"Added arena pedestrian {arena_pedestrian.name} - Total: {len(self._arena_pedestrians_container.pedestrians)}")
 
                 # Store in pedestrians dictionary
                 self._pedestrians[agent_msg.id] = {
@@ -601,6 +643,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
         # Clear agents container (if not already done)
         self._agents_container.agents.clear()
+        self._arena_pedestrians_container.pedestrians.clear()
 
         # Stop and cleanup movement timer if running (for non-gazebo simulators)
         if hasattr(self, '_update_timer') and self._update_timer:
@@ -610,6 +653,10 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 self._logger.debug("Movement timer stopped and cleaned up")
             except Exception as e:
                 self._logger.error(f"Error stopping movement timer: {e}")
+
+        # if hasattr(self, '_arena_peds_timer') and self._arena_peds_timer:
+        #     self._arena_peds_timer.destroy()
+        #     self._arena_peds_timer = None
 
         self._logger.debug("All local data structures cleared")
 
@@ -713,3 +760,80 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 """)
 
         return agent_msg
+
+
+    def _create_arena_pedestrian(self, hunav_obstacle: HunavDynamicObstacle, unique_id: int) -> Pedestrian:
+        """Create arena_people_msgs.Pedestrian (separate from hunav)"""
+        
+        arena_ped = Pedestrian()
+        
+        arena_ped.name = hunav_obstacle.name
+        arena_ped.id = unique_id
+        
+        arena_ped.position.position.x = hunav_obstacle.init_pose.x
+        arena_ped.position.position.y = hunav_obstacle.init_pose.y
+        arena_ped.position.position.z = 1.25
+        
+        from tf_transformations import quaternion_from_euler
+        quat = quaternion_from_euler(0, 0, hunav_obstacle.yaw)
+        arena_ped.position.orientation.x = quat[0]
+        arena_ped.position.orientation.y = quat[1] 
+        arena_ped.position.orientation.z = quat[2]
+        arena_ped.position.orientation.w = quat[3]
+        
+        # Initial twist (zero at spawn)
+        arena_ped.twist.linear.x = 0.0
+        arena_ped.twist.linear.y = 0.0
+        arena_ped.twist.angular.z = 0.0
+        
+        # Animation state from behavior
+        arena_ped.animation_state = self._map_hunav_behavior_to_arena_state(hunav_obstacle.behavior.type)
+        
+        
+        self._logger.debug(f"Created arena pedestrian: {arena_ped.name}")
+        return arena_ped
+
+    def _map_hunav_behavior_to_arena_state(self, behavior_type: int) -> int:
+        """Map hunav behavior to arena animation state"""
+        
+        # Import AgentBehavior constants
+        from hunav_msgs.msg import AgentBehavior
+        
+        behavior_mapping = {
+            AgentBehavior.BEH_REGULAR: Pedestrian.WALKING,
+            AgentBehavior.BEH_IMPASSIVE: Pedestrian.IDLE, 
+            AgentBehavior.BEH_SURPRISED: Pedestrian.SURPRISED,
+            AgentBehavior.BEH_SCARED: Pedestrian.PANIC,
+            AgentBehavior.BEH_CURIOUS: Pedestrian.CURIOUS,
+            AgentBehavior.BEH_THREATENING: Pedestrian.THREATENING,
+        }
+        
+        return behavior_mapping.get(behavior_type, Pedestrian.WALKING)
+
+    def _publish_arena_peds_callback(self):
+        """Continuously publish SEPARATE arena pedestrians"""
+        self._logger.info(f"CALLBACK CALLED! Timer exists: {hasattr(self, '_arena_peds_timer')}")
+    
+        self._logger.info(f"Arena peds callback - Container has {len(self._arena_pedestrians_container.pedestrians)} pedestrians")
+        
+        # Only publish if we have arena pedestrians
+        if not self._arena_pedestrians_container.pedestrians:
+            self._logger.info("No arena pedestrians to publish!")
+            return
+            
+        
+        #self._logger.error("ABOUT TO PUBLISH - BEFORE TRY BLOCK")
+        
+        try:
+            # Update timestamp
+            self._arena_pedestrians_container.header.stamp = self.node.get_clock().now().to_msg()
+            
+            # Publish SEPARATE arena pedestrians (not hunav agents!)
+            self._arena_peds_publisher.publish(self._arena_pedestrians_container)
+            
+            self._logger.info(f"SUCCESSFULLY PUBLISHED {len(self._arena_pedestrians_container.pedestrians)} arena pedestrians")
+            
+        except Exception as e:
+            self._logger.info(f"EXCEPTION during publishing: {e}")
+
+    
