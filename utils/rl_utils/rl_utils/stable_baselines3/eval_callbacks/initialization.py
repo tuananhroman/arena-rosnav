@@ -1,8 +1,9 @@
 from typing import TYPE_CHECKING, List
 
-# from rl_utils.stable_baselines3.eval_callbacks.staged_train_callback import (
-#     InitiateNewTrainStage,
-# )
+from rl_utils.node import SupervisorNode
+from rl_utils.stable_baselines3.eval_callbacks.staged_train_callback import (
+    InitiateNewTrainStage,
+)
 from rosnav_rl.utils.stable_baselines3.callbacks import (
     RosnavEvalCallback,
     StopTrainingOnRewardThreshold,
@@ -15,6 +16,7 @@ if TYPE_CHECKING:
 
 
 def init_sb3_callbacks(
+    node: SupervisorNode,
     eval_env: VecEnv,
     n_envs: int,
     tm_modules: List[str],
