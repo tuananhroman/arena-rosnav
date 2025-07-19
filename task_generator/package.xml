@@ -16,8 +16,6 @@
   <depend>std_msgs</depend>
 
   <exec_depend>arena_bringup</exec_depend>
-  <exec_depend>robot_localization</exec_depend>
-  <exec_depend>${PROJECT_NAME}_msgs</exec_depend>
 
   <member_of_group>rosidl_interface_packages</member_of_group>
   <export>
