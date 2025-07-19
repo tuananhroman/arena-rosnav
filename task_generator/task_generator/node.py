@@ -230,9 +230,9 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         response.n_interactive_obstacles = [0, 0]
         response.n_dynamic_obstacles = [1, 5]
 
-        response.models_static_obstacles = arena_simulation_setup.entities.obstacles.static.Obstacle(self._world_manager.world_name).list()
+        response.models_static_obstacles = arena_simulation_setup.entities.obstacles.static.Obstacle.list()
         response.models_interactive_obstacles = []
-        response.models_dynamic_obstacles = arena_simulation_setup.entities.obstacles.dynamic.DynamicObstacle(self._world_manager.world_name).list()
+        response.models_dynamic_obstacles = arena_simulation_setup.entities.obstacles.dynamic.DynamicObstacle.list()
 
         return response
 
