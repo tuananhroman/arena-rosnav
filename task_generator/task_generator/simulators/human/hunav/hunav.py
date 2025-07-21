@@ -230,6 +230,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info("=== HUNAVMANAGER INIT COMPLETE ===")
 
         self._gz_plugin_spawned: bool = False
+        self._last_updated_agents = None
         
 
 
@@ -811,29 +812,45 @@ class HunavHumanSimulator(DummyHumanSimulator):
         return behavior_mapping.get(behavior_type, Pedestrian.WALKING)
 
     def _publish_arena_peds_callback(self):
-        """Continuously publish SEPARATE arena pedestrians"""
-        self._logger.info(f"CALLBACK CALLED! Timer exists: {hasattr(self, '_arena_peds_timer')}")
-    
-        self._logger.info(f"Arena peds callback - Container has {len(self._arena_pedestrians_container.pedestrians)} pedestrians")
+        """Publish for the generic arena_peds"""
         
-        # Only publish if we have arena pedestrians
         if not self._arena_pedestrians_container.pedestrians:
-            self._logger.info("No arena pedestrians to publish!")
             return
             
-        
-        #self._logger.error("ABOUT TO PUBLISH - BEFORE TRY BLOCK")
-        
         try:
-            # Update timestamp
-            self._arena_pedestrians_container.header.stamp = self.node.get_clock().now().to_msg()
+            # Use last updated agents as current agents
+            if self._last_updated_agents:
+                current_agents = self._last_updated_agents
+            else:
+                current_agents = self._agents_container
             
-            # Publish SEPARATE arena pedestrians (not hunav agents!)
+            
+            current_agents.header.frame_id = "map"
+            current_agents.header.stamp = self.node.get_clock().now().to_msg()
+            
+            request = ComputeAgents.Request()
+            request.current_agents = current_agents
+            request.robot = _create_robot_message()
+            
+            response = self._compute_agents_client.call(request)
+            
+            if response and response.updated_agents:
+                # Set frame_id AGAIN since ComputeAgents (updated Agents) returns Agents with empty frame_id...
+                response.updated_agents.header.frame_id = "map"
+                response.updated_agents.header.stamp = self.node.get_clock().now().to_msg()
+                
+                self._last_updated_agents = response.updated_agents
+                
+                # Update arena pedestrians
+                for arena_ped in self._arena_pedestrians_container.pedestrians:
+                    for updated_agent in response.updated_agents.agents:
+                        if updated_agent.id == arena_ped.id:
+                            arena_ped.position = updated_agent.position
+                            arena_ped.twist = updated_agent.velocity
+                            break
+            
+            # Publish
             self._arena_peds_publisher.publish(self._arena_pedestrians_container)
             
-            self._logger.info(f"SUCCESSFULLY PUBLISHED {len(self._arena_pedestrians_container.pedestrians)} arena pedestrians")
-            
         except Exception as e:
-            self._logger.info(f"EXCEPTION during publishing: {e}")
-
-    
+            self._logger.error(f"Error: {e}")
