@@ -1,136 +1,199 @@
-import warnings
-
-# import rospy
-import numpy as np
+from stable_baselines3.common.callbacks import BaseCallback
+from rclpy.node import Node
+from rcl_interfaces.srv import SetParameters
+from rcl_interfaces.msg import Parameter, ParameterType
 import time
 
-from std_msgs.msg import Bool
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
-
-
 class InitiateNewTrainStage(BaseCallback):
-    """
-    Introduces new training stage when threshhold reached.
-    It must be used with "EvalCallback".
+    def __init__(self, node: Node, train_stages: dict, threshold_type: str, upper_threshold: float,
+                 lower_threshold: float, num_envs: int, verbose: int = 0):
+        super().__init__(verbose=verbose)
+        self.node = node
+        self.train_stages = train_stages
+        self.threshold_type = threshold_type
+        self.upper_threshold = upper_threshold
+        self.lower_threshold = lower_threshold
+        self.num_envs = num_envs
+        self.TIMEOUT = 10.0
+        
+        # Init other needed variables
+        self.curriculum_index = 0
+        self.max_index = len(next(iter(train_stages.values())))
+        self.parameter_clients = self._init_parameter_clients()
 
-    :param treshhold_type (str): checks threshhold for either percentage of successful episodes (succ) or mean reward (rew)
-    :param rew_threshold (int): mean reward threshold to trigger new stage
-    :param succ_rate_threshold (float): threshold percentage of succesful episodes to trigger new stage
-    :param task_mode (str): training task mode, if not 'staged' callback won't be called
-    :param verbose:
-    """
+    def _init_parameter_clients(self):
+        clients = {}
+        for i in range(self.num_envs):
+            node_name = f"/task_generator_node_{i}" if self.num_envs > 1 else "/task_generator_node"
+            clients[node_name] = self.node.create_client(SetParameters, f"{node_name}/set_parameters")
+        return clients
 
-    def __init__(
-        self,
-        n_envs: int = 1,
-        treshhold_type: str = "succ",
-        upper_threshold: float = 0,
-        lower_threshold: float = 0,
-        activated: bool = False,
-        verbose=0,
-    ):
-        super(InitiateNewTrainStage, self).__init__(verbose=verbose)
-        self.n_envs = n_envs
-        self.threshhold_type = treshhold_type
+    def _set_parameters_batch(self, node_name: str, param_dict: dict) -> bool:
+        """Set parameters for a single node - returns True on success"""
+        client = self.parameter_clients.get(node_name)
+        if not client:
+            if self.verbose > 0:
+                print(f"No parameter client found for {node_name}")
+            return False
 
-        assert self.threshhold_type in {
-            "rew",
-            "succ",
-        }, "given theshhold type neither 'rew' or 'succ'"
+        if not client.wait_for_service(timeout_sec=self.TIMEOUT):
+            if self.verbose > 0:
+                print(f"Service for {node_name} unavailable after timeout")
+            return False
 
-        # default values
-        if self.threshhold_type == "rew" and upper_threshold == 0:
-            self.upper_threshold = 13
-            self.lower_threshold = 7
-        elif self.threshhold_type == "succ" and upper_threshold == 0:
-            self.upper_threshold = 0.85
-            self.lower_threshold = 0.6
-        else:
-            self.upper_threshold = upper_threshold
-            self.lower_threshold = lower_threshold
+        params = []
+        for param_name, param_value in param_dict.items():
+            if isinstance(param_value, list) and not param_value:
+                if self.verbose > 0:
+                    print(f"Skipping empty parameter {param_name} for {node_name}")
+                continue
 
-        assert (
-            self.upper_threshold > self.lower_threshold
-        ), "upper threshold has to be bigger than lower threshold"
-        # assert (
-        #     self.upper_threshold >= 0 and self.lower_threshold >= 0
-        # ), "upper/lower threshold have to be positive numbers"
-        if self.threshhold_type == "succ":
-            assert (
-                self.upper_threshold <= 1 and self.lower_threshold >= 0
-            ), "succ thresholds have to be between [1.0, 0.0]"
+            param = Parameter()
+            param.name = param_name
 
-        self.verbose = verbose
-        self.activated = activated
+            if isinstance(param_value, int):
+                param.value.type = ParameterType.PARAMETER_INTEGER
+                param.value.integer_value = param_value
+            elif isinstance(param_value, float):
+                param.value.type = ParameterType.PARAMETER_DOUBLE
+                param.value.double_value = param_value
+            elif isinstance(param_value, str):
+                param.value.type = ParameterType.PARAMETER_STRING
+                param.value.string_value = param_value
+            elif isinstance(param_value, bool):
+                param.value.type = ParameterType.PARAMETER_BOOL
+                param.value.bool_value = param_value
+            elif isinstance(param_value, list) and all(isinstance(x, int) for x in param_value):
+                param.value.type = ParameterType.PARAMETER_INTEGER_ARRAY
+                param.value.integer_array_value = param_value
+            elif isinstance(param_value, list) and all(isinstance(x, float) for x in param_value):
+                param.value.type = ParameterType.PARAMETER_DOUBLE_ARRAY
+                param.value.double_array_value = param_value
+            elif isinstance(param_value, list) and all(isinstance(x, str) for x in param_value):
+                param.value.type = ParameterType.PARAMETER_STRING_ARRAY
+                param.value.string_array_value = param_value
+            elif isinstance(param_value, list) and all(isinstance(x, bool) for x in param_value):
+                param.value.type = ParameterType.PARAMETER_BOOL_ARRAY
+                param.value.bool_array_value = param_value
+            elif isinstance(param_value, list) and all(isinstance(x, bytes) for x in param_value):
+                param.value.type = ParameterType.PARAMETER_BYTE_ARRAY
+                param.value.byte_array_value = param_value
+            else:
+                if self.verbose > 0:
+                    print(f"Unsupported parameter type for {param_name}: {type(param_value)}")
+                return False
 
-        if self.activated:
-            rospy.set_param("/last_stage_reached", False)
-            self._instantiate_publishers()
+            params.append(param)
 
-            self._trigger = Bool()
-            self._trigger.data = True
+        request = SetParameters.Request(parameters=params)
+        
+        try:
+            future = client.call_async(request)
+            
+            # Wait for the future with timeout
+            start_time = time.time()
+            while not future.done():
+                import rclpy
+                rclpy.spin_once(self.node, timeout_sec=0.1)
+                if time.time() - start_time > self.TIMEOUT:
+                    if self.verbose > 0:
+                        print(f"Timeout waiting for response from {node_name}")
+                    return False
 
-    def _instantiate_publishers(self):
-        self._publishers_next = []
-        self._publishers_previous = []
+            response = future.result()
 
-        self._publishers_next.append(
-            rospy.Publisher(f"/eval_sim/next_stage", Bool, queue_size=1)
-        )
-        self._publishers_previous.append(
-            rospy.Publisher(f"/eval_sim/previous_stage", Bool, queue_size=1)
-        )
+            if response and all(result.successful for result in response.results):
+                if self.verbose > 0:
+                    print(f"Parameters set successfully on {node_name}")
+                return True
+            else:
+                if self.verbose > 0:
+                    print(f"Failed to set parameters on {node_name}")
+                    if response:
+                        for i, result in enumerate(response.results):
+                            if not result.successful:
+                                print(f"  Parameter {i}: {result.reason}")
+                return False
 
-        for env_num in range(self.n_envs):
-            self._publishers_next.append(
-                rospy.Publisher(f"/sim_{env_num+1}/next_stage", Bool, queue_size=1)
-            )
-            self._publishers_previous.append(
-                rospy.Publisher(f"/sim_{env_num+1}/previous_stage", Bool, queue_size=1)
-            )
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"Exception setting parameters on {node_name}: {e}")
+            return False
 
-    def _on_step(self, EvalObject: EvalCallback) -> bool:
-        assert isinstance(
-            EvalObject, EvalCallback
-        ), f"InitiateNewTrainStage must be called within EvalCallback"
+    def _set_parameters(self, param_dict: dict) -> bool:
+        """Set parameters for all task generator nodes"""
+        if not self.parameter_clients:
+            if self.verbose > 0:
+                print("No parameter clients available")
+            return False
 
-        if self.activated:
-            if EvalObject.n_eval_episodes < 20:
-                warnings.warn(
-                    "Only %d evaluation episodes considered for threshold monitoring,"
-                    "results might not represent agent performance well"
-                    % EvalObject.n_eval_episodes
-                )
+        success_count = 0
+        for node_name in self.parameter_clients.keys():
+            if self._set_parameters_batch(node_name, param_dict):
+                success_count += 1
+            else:
+                if self.verbose > 0:
+                    print(f"Failed to set parameters for {node_name}")
 
-            if (
-                self.threshhold_type == "rew"
-                and EvalObject.best_mean_reward <= self.lower_threshold
-            ) or (
-                self.threshhold_type == "succ"
-                and EvalObject.last_success_rate <= self.lower_threshold
-            ):
-                for i, pub in enumerate(self._publishers_previous):
-                    pub.publish(self._trigger)
-                    if i == 0:
-                        self.log_curr_stage(EvalObject.logger)
+        success = success_count == len(self.parameter_clients)
+        if self.verbose > 0:
+            print(f"Parameter setting complete: {success_count}/{len(self.parameter_clients)} successful")
+        return success
 
-            if (
-                self.threshhold_type == "rew"
-                and EvalObject.best_mean_reward >= self.upper_threshold
-            ) or (
-                self.threshhold_type == "succ"
-                and EvalObject.last_success_rate >= self.upper_threshold
-            ):
-                if not rospy.get_param("/last_state_reached", False):
-                    EvalObject.best_mean_reward = -np.inf
-                    EvalObject.last_success_rate = -np.inf
+    def _apply_curriculum(self):
+        """Apply current curriculum stage parameters"""
+        try:
+            param_values = {
+                param_name: values[self.curriculum_index]
+                for param_name, values in self.train_stages.items()
+            }
+            
+            if self.verbose > 0:
+                print(f"Applying curriculum stage {self.curriculum_index}: {param_values}")
+            
+            return self._set_parameters(param_values)
+        except Exception as e:
+            if self.verbose > 0:
+                print(f"Error applying curriculum: {e}")
+            return False
 
-                for i, pub in enumerate(self._publishers_next):
-                    pub.publish(self._trigger)
-                    if i == 0:
-                        self.log_curr_stage(EvalObject.logger)
+    def _advance_curriculum(self):
+        if self.curriculum_index < self.max_index - 1:
+            self.curriculum_index += 1
+            if self.verbose > 0:
+                print(f"Advanced to curriculum stage {self.curriculum_index}")
+            self._apply_curriculum()
 
-    def log_curr_stage(self, logger):
-        time.sleep(1)
-        curr_stage = rospy.get_param("/curr_stage", -1)
-        logger.record("train_stage/stage_idx", curr_stage)
+    def _retreat_curriculum(self):
+        if self.curriculum_index > 0:
+            self.curriculum_index -= 1
+            if self.verbose > 0:
+                print(f"Retreated to curriculum stage {self.curriculum_index}")
+            self._apply_curriculum()
+
+    def _on_step(self) -> bool:
+        # Access performance data from the parent EvalCallback
+        # The parent callback is available through self.parent
+        if hasattr(self, 'parent') and self.parent is not None:
+            eval_callback = self.parent
+            
+            if self.threshold_type == "rew":
+                current_performance = eval_callback.best_mean_reward
+            elif self.threshold_type == "succ":
+                current_performance = getattr(eval_callback, 'last_success_rate', 0.0)
+            else:
+                return True
+                
+            # Check thresholds and apply curriculum changes
+            if current_performance >= self.upper_threshold:
+                self._advance_curriculum()
+                # Reset performance tracking for next stage
+                if self.threshold_type == "rew":
+                    eval_callback.best_mean_reward = float('-inf')
+                elif self.threshold_type == "succ":
+                    eval_callback.last_success_rate = 0.0
+                    
+            elif current_performance <= self.lower_threshold:
+                self._retreat_curriculum()
+        
+        return True
