@@ -598,6 +598,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
             request.current_agents = Agents()
             request.current_agents.header.stamp = self.node.get_clock().now().to_msg()
             request.current_agents.header.frame_id = "map"
+            # self._agents_registered= False
 
             self._logger.info("Calling HuNav ResetAgents service...")
             response = self._reset_agents_client.call(request)
@@ -811,20 +812,22 @@ class HunavHumanSimulator(DummyHumanSimulator):
         
         return behavior_mapping.get(behavior_type, Pedestrian.WALKING)
 
+
     def _publish_arena_peds_callback(self):
-        """Publish for the generic arena_peds"""
+        """Use last updated agents as current agents (like Plugin does)"""
         
         if not self._arena_pedestrians_container.pedestrians:
             return
             
         try:
             # Use last updated agents as current agents
+
             if self._last_updated_agents:
                 current_agents = self._last_updated_agents
             else:
                 current_agents = self._agents_container
             
-            
+            # Ensure frame_id is set
             current_agents.header.frame_id = "map"
             current_agents.header.stamp = self.node.get_clock().now().to_msg()
             
@@ -835,22 +838,71 @@ class HunavHumanSimulator(DummyHumanSimulator):
             response = self._compute_agents_client.call(request)
             
             if response and response.updated_agents:
-                # Set frame_id AGAIN since ComputeAgents (updated Agents) returns Agents with empty frame_id...
+                # Fix frame_id
                 response.updated_agents.header.frame_id = "map"
                 response.updated_agents.header.stamp = self.node.get_clock().now().to_msg()
                 
                 self._last_updated_agents = response.updated_agents
                 
-                # Update arena pedestrians
+                # Update arena pedestrians with smoothing and rounding
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
-                            arena_ped.position = updated_agent.position
+                            # Extract current yaw from arena_ped orientation
+                            import tf_transformations
+                            current_quat = [
+                                arena_ped.position.orientation.x,
+                                arena_ped.position.orientation.y, 
+                                arena_ped.position.orientation.z,
+                                arena_ped.position.orientation.w
+                            ]
+                            _, _, current_yaw = tf_transformations.euler_from_quaternion(current_quat)
+                            
+                            # Smooth yaw transition
+                            smooth_yaw = self._smooth_yaw(updated_agent.yaw, current_yaw)
+                            
+                            # Round coordinates to avoid floating point errors
+                            arena_ped.position = self._round_coordinates(updated_agent.position, 2)
                             arena_ped.twist = updated_agent.velocity
+                            
+                            # Set smoothed yaw back to orientation
+                            smooth_quat = tf_transformations.quaternion_from_euler(0, 0, smooth_yaw)
+                            arena_ped.position.orientation.x = smooth_quat[0]
+                            arena_ped.position.orientation.y = smooth_quat[1]
+                            arena_ped.position.orientation.z = smooth_quat[2]
+                            arena_ped.position.orientation.w = smooth_quat[3]
                             break
-            
+        
             # Publish
             self._arena_peds_publisher.publish(self._arena_pedestrians_container)
             
         except Exception as e:
             self._logger.error(f"Error: {e}")
+
+    def _smooth_yaw(self, new_yaw, current_yaw):
+        """Smooth yaw transitions like the Plugin does"""
+        import math
+        
+        def normalize_angle(angle):
+            return math.atan2(math.sin(angle), math.cos(angle))
+        
+        new_yaw = normalize_angle(new_yaw)
+        diff = normalize_angle(new_yaw - current_yaw)
+        
+        # If difference > 10 degrees, smooth the transition
+        if abs(diff) > math.radians(10):
+            return normalize_angle(current_yaw + (diff * 0.01))
+        else:
+            return new_yaw
+
+    def _round_coordinates(self, position, decimals=2):
+        """Round coordinates to avoid floating point errors"""
+        position.position.x = round(position.position.x, decimals)
+        position.position.y = round(position.position.y, decimals)
+        position.position.z = round(position.position.z, decimals)
+        return position
+
+
+
+
+
