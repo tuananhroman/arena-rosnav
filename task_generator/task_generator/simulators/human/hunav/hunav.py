@@ -231,6 +231,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
         self._gz_plugin_spawned: bool = False
         self._last_updated_agents = None
+        self._last_smooth_yaws = {} 
         
 
 
@@ -821,7 +822,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
             
         try:
             # Use last updated agents as current agents
-
             if self._last_updated_agents:
                 current_agents = self._last_updated_agents
             else:
@@ -830,7 +830,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
             # Ensure frame_id is set
             current_agents.header.frame_id = "map"
             current_agents.header.stamp = self.node.get_clock().now().to_msg()
+
+            # Smooth yaw values before sending to HuNav
+            current_agents = self._smooth_agents_before_hunav(current_agents)
             
+            # Create request
             request = ComputeAgents.Request()
             request.current_agents = current_agents
             request.robot = _create_robot_message()
@@ -844,36 +848,23 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 
                 self._last_updated_agents = response.updated_agents
                 
-                # Update arena pedestrians with smoothing and rounding
+                # Update arena pedestrians 
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
-                            self._logger.error(f"Agent {updated_agent.id}: RAW yaw={updated_agent.yaw:.6f}")
-                            # Extract current yaw from arena_ped orientation
-                            import tf_transformations
-                            current_quat = [
-                                arena_ped.position.orientation.x,
-                                arena_ped.position.orientation.y, 
-                                arena_ped.position.orientation.z,
-                                arena_ped.position.orientation.w
-                            ]
-                            _, _, current_yaw = tf_transformations.euler_from_quaternion(current_quat)
-                            
-                            # Smooth yaw transition
-                            smooth_yaw = self._smooth_yaw(updated_agent.yaw, current_yaw)
-                            
-                            # Round coordinates to avoid floating point errors
+                            # Round coordinates and update
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
                             arena_ped.twist = updated_agent.velocity
                             
-                            # Set smoothed yaw back to orientation
-                            smooth_quat = tf_transformations.quaternion_from_euler(0, 0, smooth_yaw)
-                            arena_ped.position.orientation.x = smooth_quat[0]
-                            arena_ped.position.orientation.y = smooth_quat[1]
-                            arena_ped.position.orientation.z = smooth_quat[2]
-                            arena_ped.position.orientation.w = smooth_quat[3]
+                            import tf_transformations
+                            # Use updated_agent yaw directly (already smoothed via feedback)
+                            quat = tf_transformations.quaternion_from_euler(0, 0, updated_agent.yaw)
+                            arena_ped.position.orientation.x = quat[0]
+                            arena_ped.position.orientation.y = quat[1]
+                            arena_ped.position.orientation.z = quat[2]
+                            arena_ped.position.orientation.w = quat[3]
                             break
-        
+            
             # Publish
             self._arena_peds_publisher.publish(self._arena_pedestrians_container)
             
@@ -891,11 +882,19 @@ class HunavHumanSimulator(DummyHumanSimulator):
         diff = normalize_angle(new_yaw - current_yaw)
         
 
-        if abs(diff) > math.radians(5): 
-            return normalize_angle(current_yaw + (diff * 0.001))  
+        if abs(diff) > math.radians(10):  # 5° statt 10°
+            return normalize_angle(current_yaw + (diff * 0.01))  
         else:
             return current_yaw  
 
+    def _smooth_agents_before_hunav(self, agents):
+        """Yaw smoothing before sending back to hunav"""
+        for agent in agents.agents:
+            if agent.id in self._last_smooth_yaws:
+                # Wende Smoothing an
+                agent.yaw = self._smooth_yaw(agent.yaw, self._last_smooth_yaws[agent.id])
+            self._last_smooth_yaws[agent.id] = agent.yaw
+        return agents
 
     def _round_coordinates(self, position, decimals=2):
         """Round coordinates to avoid floating point errors"""
