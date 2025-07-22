@@ -68,50 +68,50 @@ class _PedestrianHelper:
         8: 1.05
     }
 
-    @classmethod
-    def plugin_entity(cls, namespace: str) -> Obstacle:
+    # @classmethod
+    # def plugin_entity(cls, namespace: str) -> Obstacle:
 
-        sdf_content = f"""<?xml version="1.0" ?>
-            <sdf version="1.9">
-                <model name="hunav_plugin">
-                    <static>true</static>
-                    <link name="empty">
-                        <visual name="visual">
-                            <geometry>
-                                <box>
-                                    <size>0.01 0.01 0.01</size>
-                                </box>
-                            </geometry>
-                        </visual>
-                    </link>
-                    <plugin name="HuNavSystemPluginIGN" filename="libHuNavSystemPluginIGN.so">
-                        <update_rate>1000.0</update_rate>
-                        <namespace>{namespace}</namespace>
-                        <!-- <robot_name>jackal</robot_name> -->
-                        <use_gazebo_obs>true</use_gazebo_obs>
-                        <global_frame_to_publish>map</global_frame_to_publish>
-                        <use_navgoal_to_start>false</use_navgoal_to_start>
-                        <navgoal_topic>goal_pose</navgoal_topic>
-                        <ignore_models>
-                            <model>ground_plane</model>
-                            <model>sun</model>
-                        </ignore_models>
-                    </plugin>
-                </model>
-            </sdf>"""
+    #     sdf_content = f"""<?xml version="1.0" ?>
+    #         <sdf version="1.9">
+    #             <model name="hunav_plugin">
+    #                 <static>true</static>
+    #                 <link name="empty">
+    #                     <visual name="visual">
+    #                         <geometry>
+    #                             <box>
+    #                                 <size>0.01 0.01 0.01</size>
+    #                             </box>
+    #                         </geometry>
+    #                     </visual>
+    #                 </link>
+    #                 <plugin name="HuNavSystemPluginIGN" filename="libHuNavSystemPluginIGN.so">
+    #                     <update_rate>1000.0</update_rate>
+    #                     <namespace>{namespace}</namespace>
+    #                     <!-- <robot_name>jackal</robot_name> -->
+    #                     <use_gazebo_obs>true</use_gazebo_obs>
+    #                     <global_frame_to_publish>map</global_frame_to_publish>
+    #                     <use_navgoal_to_start>false</use_navgoal_to_start>
+    #                     <navgoal_topic>goal_pose</navgoal_topic>
+    #                     <ignore_models>
+    #                         <model>ground_plane</model>
+    #                         <model>sun</model>
+    #                     </ignore_models>
+    #                 </plugin>
+    #             </model>
+    #         </sdf>"""
 
-        return Obstacle(
-            name="hunav_plugin",
-            pose=Pose(Position(x=0.0, y=0.0, z=-1.0)),
-            model=ModelWrapper.Constant("hunav_plugin", {
-                ModelType.SDF: Model(
-                    type=ModelType.SDF,
-                    name="hunav_plugin",
-                    description=sdf_content,
-                    path="",
-                )
-            })
-        )
+    #     return Obstacle(
+    #         name="hunav_plugin",
+    #         pose=Pose(Position(x=0.0, y=0.0, z=-1.0)),
+    #         model=ModelWrapper.Constant("hunav_plugin", {
+    #             ModelType.SDF: Model(
+    #                 type=ModelType.SDF,
+    #                 name="hunav_plugin",
+    #                 description=sdf_content,
+    #                 path="",
+    #             )
+    #         })
+    #     )
 
     @classmethod
     def create_sdf(cls, agent_config: HunavDynamicObstacle) -> str:
@@ -403,35 +403,35 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info(f"Sent {len(self._wall_segments)} wall segments")
         return response
 
-    def _move_entity_callback(self):
-        """Pedestrian Move Entity Callback for non gazebo simulators"""
-        # Nur updaten wenn Agents vorhanden sind
-        if not self._agents_container.agents:
-            return
+    # def _move_entity_callback(self):
+    #     """Pedestrian Move Entity Callback for non gazebo simulators"""
+    #     # Nur updaten wenn Agents vorhanden sind
+    #     if not self._agents_container.agents:
+    #         return
 
-        # Timestamp aktualisieren
-        self._agents_container.header.stamp = self.node.get_clock().now().to_msg()
+    #     # Timestamp aktualisieren
+    #     self._agents_container.header.stamp = self.node.get_clock().now().to_msg()
 
-        # HuNav Service aufrufen
-        request = ComputeAgents.Request()
-        request.robot = _create_robot_message()
-        request.current_agents = self._agents_container
+    #     # HuNav Service aufrufen
+    #     request = ComputeAgents.Request()
+    #     request.robot = _create_robot_message()
+    #     request.current_agents = self._agents_container
 
-        try:
-            response = self._compute_agents_client.call(request)
-            if response:
-                # move_entity for each agent
-                for updated_agent in response.updated_agents.agents:
-                    pose = Pose.from_msg(updated_agent.position)
-                    self._simulator.move_entity(updated_agent.name, pose)
+    #     try:
+    #         response = self._compute_agents_client.call(request)
+    #         if response:
+    #             # move_entity for each agent
+    #             for updated_agent in response.updated_agents.agents:
+    #                 pose = Pose.from_msg(updated_agent.position)
+    #                 self._simulator.move_entity(updated_agent.name, pose)
 
-                    for i, agent in enumerate(self._agents_container.agents):
-                        if agent.id == updated_agent.id:
-                            self._agents_container.agents[i] = updated_agent
-                            break
+    #                 for i, agent in enumerate(self._agents_container.agents):
+    #                     if agent.id == updated_agent.id:
+    #                         self._agents_container.agents[i] = updated_agent
+    #                         break
 
-        except Exception as e:
-            self._logger.error(f"Failed to update agent positions: {e}")
+    #     except Exception as e:
+    #         self._logger.error(f"Failed to update agent positions: {e}")
 
     def _spawn_dynamic_obstacles_impl(self, obstacles):
 
@@ -468,9 +468,9 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                 if self._simulator_type == Constants.SimSimulator.GAZEBO:
                     # spawn plugin if not already spawned
-                    if not self._gz_plugin_spawned:
-                        self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
-                        self._gz_plugin_spawned = True
+                    # if not self._gz_plugin_spawned:
+                    #     self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
+                    #     self._gz_plugin_spawned = True
 
                     # Create SDF with plugin for Gazebo
                     sdf = _PedestrianHelper.create_sdf(hunav_obstacle)
@@ -522,12 +522,12 @@ class HunavHumanSimulator(DummyHumanSimulator):
                     if updated_agent.id in self._pedestrians:
                         self._pedestrians[updated_agent.id]['agent'] = updated_agent
 
-                if self._simulator_type != Constants.SimSimulator.GAZEBO:
-                    self._logger.debug("Non-Gazebo detected - starting movement timer")
-                    self._update_timer = self.node.create_timer(
-                        0.1,  # 10 Hz
-                        self._move_entity_callback
-                    )
+                # if self._simulator_type != Constants.SimSimulator.GAZEBO:
+                #     self._logger.debug("Non-Gazebo detected - starting movement timer")
+                #     self._update_timer = self.node.create_timer(
+                #         0.1,  # 10 Hz
+                #         self._move_entity_callback
+                #     )
             else:
                 self._logger.error("Failed to register agents with HuNav")
         else:
@@ -720,7 +720,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # self._logger.debug(f"Hunav Manager Closest Obstacles: {agent_msg.closest_obs}")
 
         # After creating the agent message:
-        self._logger.debug(f"""            ##Complete Debug for the set attributes
+        self._logger.error(f"""            ##Complete Debug for the set attributes
                 Full HunavObstacle Details:
                 ID: {agent_msg.id}
                 Name: {agent_msg.name}
@@ -848,6 +848,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
+                            self._logger.error(f"Agent {updated_agent.id}: RAW yaw={updated_agent.yaw:.6f}")
                             # Extract current yaw from arena_ped orientation
                             import tf_transformations
                             current_quat = [
@@ -880,20 +881,21 @@ class HunavHumanSimulator(DummyHumanSimulator):
             self._logger.error(f"Error: {e}")
 
     def _smooth_yaw(self, new_yaw, current_yaw):
-        """Smooth yaw transitions like the Plugin does"""
         import math
         
         def normalize_angle(angle):
             return math.atan2(math.sin(angle), math.cos(angle))
         
         new_yaw = normalize_angle(new_yaw)
+        current_yaw = normalize_angle(current_yaw)
         diff = normalize_angle(new_yaw - current_yaw)
         
-        # If difference > 10 degrees, smooth the transition
-        if abs(diff) > math.radians(10):
-            return normalize_angle(current_yaw + (diff * 0.01))
+
+        if abs(diff) > math.radians(5): 
+            return normalize_angle(current_yaw + (diff * 0.001))  
         else:
-            return new_yaw
+            return current_yaw  
+
 
     def _round_coordinates(self, position, decimals=2):
         """Round coordinates to avoid floating point errors"""
