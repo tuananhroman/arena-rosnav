@@ -877,15 +877,15 @@ class HunavHumanSimulator(DummyHumanSimulator):
         def normalize_angle(angle):
             return math.atan2(math.sin(angle), math.cos(angle))
         
-        new_yaw = normalize_angle(new_yaw)
+        
+        new_yaw = normalize_angle(new_yaw - 0.30)  
         current_yaw = normalize_angle(current_yaw)
         diff = normalize_angle(new_yaw - current_yaw)
         
-
-        if abs(diff) > math.radians(10):  # 5° statt 10°
-            return normalize_angle(current_yaw + (diff * 0.01))  
+        if abs(diff) > math.radians(15):  
+            return normalize_angle(current_yaw + (diff * 0.1))  
         else:
-            return current_yaw  
+            return current_yaw
 
     def _smooth_agents_before_hunav(self, agents):
         """Yaw smoothing before sending back to hunav"""
