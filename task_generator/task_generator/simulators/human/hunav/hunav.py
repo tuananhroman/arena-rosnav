@@ -602,7 +602,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
             request.current_agents = Agents()
             request.current_agents.header.stamp = self.node.get_clock().now().to_msg()
             request.current_agents.header.frame_id = "map"
-            # self._agents_registered= False
+
 
             self._logger.info("Calling HuNav ResetAgents service...")
             response = self._reset_agents_client.call(request)
@@ -855,13 +855,13 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
-                            # Berechne Velocity aus Positionsänderung (wie Plugin)
+
                             calculated_vel_x, calculated_vel_y = self._calculate_velocity_from_position_change(updated_agent, arena_ped)
 
-                            # Position updates
+
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
 
-                            # Setze calculated velocity (statt HuNav velocity!)
+
                             arena_ped.twist.linear.x = calculated_vel_x
                             arena_ped.twist.linear.y = calculated_vel_y
                             arena_ped.twist.linear.z = 0.0
@@ -874,29 +874,27 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             import tf_transformations
 
                             
-                            # Intelligente Orientierungs-Berechnung (MIT CALCULATED VELOCITY!)
-                            vel_x = calculated_vel_x  # ← RICHTIG!
-                            vel_y = calculated_vel_y  # ← RICHTIG!
+                            # Orientation through CALCULATED VELOCITY! 
+                            vel_x = calculated_vel_x  
+                            vel_y = calculated_vel_y  
                             velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
 
                             if velocity_magnitude > 0.05:
-                                # Bei Bewegung: Orientierung aus Velocity (präziser)
                                 target_yaw = math.atan2(vel_y, vel_x)
                             else:
-                                # Bei Stillstand: Orientierung aus HuNav yaw (damit er sich trotzdem dreht)
                                 target_yaw = updated_agent.yaw
 
-                            # Smoothing anwenden
+                            
                             smoothed_yaw = self._smooth_yaw_slerp(target_yaw, arena_ped.id)
 
-                            # Setze Orientierung
+                            
                             quat = tf_transformations.quaternion_from_euler(0, 0, smoothed_yaw)
                             arena_ped.position.orientation.x = quat[0]
                             arena_ped.position.orientation.y = quat[1] 
                             arena_ped.position.orientation.z = quat[2]
                             arena_ped.position.orientation.w = quat[3]
 
-                            # HIER DIESE ZEILEN EINFÜGEN:
+                            
                             updated_agent.velocity.linear.x = calculated_vel_x
                             updated_agent.velocity.linear.y = calculated_vel_y
                             updated_agent.yaw = smoothed_yaw
@@ -933,7 +931,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Yaw smoothing before sending back to hunav"""
         for agent in agents.agents:
             if agent.id in self._last_smooth_yaws:
-                # Wende Smoothing an
                 agent.yaw = self._smooth_yaw(agent.yaw, self._last_smooth_yaws[agent.id])
             self._last_smooth_yaws[agent.id] = agent.yaw
         return agents
@@ -964,25 +961,25 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
 
     def _calculate_velocity_from_position_change(self, updated_agent, arena_ped, dt=0.1):
-        """Berechne Velocity aus Positionsänderung wie HuNavSystemPlugin"""
+        """Calculate Position from the velocity change"""
         import math
         
-        # Previous position (aus arena_ped)
+        # Previous position 
         prev_x = arena_ped.position.position.x
         prev_y = arena_ped.position.position.y
         
-        # Current position (von HuNav)
+        # Current position
         curr_x = updated_agent.position.position.x
         curr_y = updated_agent.position.position.y
         
-        # Berechne Velocity aus Position difference
+        
         vel_x = (curr_x - prev_x) / dt
         vel_y = (curr_y - prev_y) / dt
         
-        # Speed limiting (wie Plugin)
+        # Speed limiting 
         velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
         if velocity_magnitude > updated_agent.desired_velocity:
-            # Begrenze auf desired_velocity
+            
             scale_factor = updated_agent.desired_velocity / velocity_magnitude
             vel_x *= scale_factor
             vel_y *= scale_factor
@@ -1031,7 +1028,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
 
     def _smooth_yaw_slerp(self, target_yaw, agent_id):
-        """Smooth yaw transitions like Isaac wrapper"""
+        """Smooth yaw transitions to avoid orientation errors of Hunavs inner calculations"""
         import math
         
         def normalize_angle(angle):
