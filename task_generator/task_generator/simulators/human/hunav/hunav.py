@@ -852,8 +852,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
 
 
-                            arena_ped.twist.linear.x = calculated_vel_x
-                            arena_ped.twist.linear.y = calculated_vel_y
+                            arena_ped.twist.linear.x = updated_agent.velocity.linear.x
+                            arena_ped.twist.linear.y = updated_agent.velocity.linear.y
                             arena_ped.twist.linear.z = 0.0
 
                             arena_ped.twist.angular.x = 0.0
