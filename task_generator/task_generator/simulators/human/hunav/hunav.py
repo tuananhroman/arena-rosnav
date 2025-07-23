@@ -852,13 +852,38 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
-                            # Round coordinates and update
+                            # Position updates
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
-                            arena_ped.twist = updated_agent.velocity
+                            #arena_ped.twist = updated_agent.velocity
+                            arena_ped.twist.linear.x = updated_agent.velocity.linear.x
+                            arena_ped.twist.linear.y = updated_agent.velocity.linear.y
+                            arena_ped.twist.linear.z = 0.0
+
+                            
+                            arena_ped.twist.angular.x = 0.0
+                            arena_ped.twist.angular.y = 0.0
+                            arena_ped.twist.angular.z = 0.0  
                             
                             import tf_transformations
-                            # Use updated_agent yaw directly (already smoothed via feedback)
-                            quat = tf_transformations.quaternion_from_euler(0, 0, updated_agent.yaw)
+                            current_quat = [
+                                arena_ped.position.orientation.x,
+                                arena_ped.position.orientation.y, 
+                                arena_ped.position.orientation.z,
+                                arena_ped.position.orientation.w
+                            ]
+                            _, _, current_yaw = tf_transformations.euler_from_quaternion(current_quat)
+                            
+                            
+                            movement_yaw = self._calculate_movement_yaw(updated_agent)
+                            if movement_yaw is not None:
+                                
+                                smooth_yaw = self._smooth_yaw(movement_yaw, current_yaw)
+                            else:
+                               
+                                smooth_yaw = current_yaw
+                            
+              
+                            quat = tf_transformations.quaternion_from_euler(0, 0, smooth_yaw)
                             arena_ped.position.orientation.x = quat[0]
                             arena_ped.position.orientation.y = quat[1]
                             arena_ped.position.orientation.z = quat[2]
@@ -882,8 +907,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
         current_yaw = normalize_angle(current_yaw)
         diff = normalize_angle(new_yaw - current_yaw)
         
-        if abs(diff) > math.radians(15):  
-            return normalize_angle(current_yaw + (diff * 0.1))  
+        if abs(diff) > math.radians(25):  
+            return normalize_angle(current_yaw + (diff * 0.01))  
         else:
             return current_yaw
 
@@ -904,6 +929,20 @@ class HunavHumanSimulator(DummyHumanSimulator):
         return position
 
 
-
+    def _calculate_movement_yaw(self, agent):
+        import math
+        
+        # Velocity-basierte OrientTION
+        vel_x = agent.velocity.linear.x
+        vel_y = agent.velocity.linear.y
+        
+        # Only if the Agent moves
+        velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
+        if velocity_magnitude > 0.05:  
+            movement_yaw = math.atan2(vel_y, vel_x)
+            return movement_yaw
+        else:
+            # If no Movement, use same Orientation dont change it 
+            return None
 
 
