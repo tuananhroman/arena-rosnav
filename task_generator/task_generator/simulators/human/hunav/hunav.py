@@ -235,6 +235,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # Orientation smoothing (wie Isaac Wrapper)
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
+        self._pending_moves = Agents()  
         
 
 
@@ -407,35 +408,24 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info(f"Sent {len(self._wall_segments)} wall segments")
         return response
 
-    # def _move_entity_callback(self):
-    #     """Pedestrian Move Entity Callback for non gazebo simulators"""
-    #     # Nur updaten wenn Agents vorhanden sind
-    #     if not self._agents_container.agents:
-    #         return
+    def _move_entity_callback(self):
+        """Pedestrian Move Entity Callback for non gazebo simulators"""
+        
+        # Use the already calculated agent updates from arena pedestrian callback
+        if not hasattr(self, '_pending_moves') or not self._pending_moves:
+            return
+        
+        try:
+            # move_entity for each agent
+            for updated_agent in self._pending_moves.agents:
+                pose = Pose.from_msg(updated_agent.position)
+                #self._logger.error(f"pose of updated agent: {pose}")
+                self._simulator.move_entity(updated_agent.name, pose)
 
-    #     # Timestamp aktualisieren
-    #     self._agents_container.header.stamp = self.node.get_clock().now().to_msg()
-
-    #     # HuNav Service aufrufen
-    #     request = ComputeAgents.Request()
-    #     request.robot = _create_robot_message()
-    #     request.current_agents = self._agents_container
-
-    #     try:
-    #         response = self._compute_agents_client.call(request)
-    #         if response:
-    #             # move_entity for each agent
-    #             for updated_agent in response.updated_agents.agents:
-    #                 pose = Pose.from_msg(updated_agent.position)
-    #                 self._simulator.move_entity(updated_agent.name, pose)
-
-    #                 for i, agent in enumerate(self._agents_container.agents):
-    #                     if agent.id == updated_agent.id:
-    #                         self._agents_container.agents[i] = updated_agent
-    #                         break
-
-    #     except Exception as e:
-    #         self._logger.error(f"Failed to update agent positions: {e}")
+            self._pending_moves = None
+            
+        except Exception as e:
+            self._logger.error(f"Failed to update agent positions: {e}")
 
     def _spawn_dynamic_obstacles_impl(self, obstacles):
 
@@ -526,12 +516,12 @@ class HunavHumanSimulator(DummyHumanSimulator):
                     if updated_agent.id in self._pedestrians:
                         self._pedestrians[updated_agent.id]['agent'] = updated_agent
 
-                # if self._simulator_type != Constants.SimSimulator.GAZEBO:
-                #     self._logger.debug("Non-Gazebo detected - starting movement timer")
-                #     self._update_timer = self.node.create_timer(
-                #         0.1,  # 10 Hz
-                #         self._move_entity_callback
-                #     )
+                if self._simulator_type != Constants.SimSimulator.GAZEBO:
+                    self._logger.debug("Non-Gazebo detected - starting movement timer")
+                    self._update_timer = self.node.create_timer(
+                        0.1,  # 10 Hz
+                        self._move_entity_callback
+                    )
             else:
                 self._logger.error("Failed to register agents with HuNav")
         else:
@@ -902,6 +892,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             updated_agent.position.orientation.y = quat[1]
                             updated_agent.position.orientation.z = quat[2]
                             updated_agent.position.orientation.w = quat[3]
+                            
+                            self._pending_moves = response.updated_agents # save response for move_entity_callback
 
                             break
             
