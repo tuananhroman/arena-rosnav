@@ -30,8 +30,8 @@ class TM_Environment(TM_Obstacles):
         x_max = y_max = -np.inf
 
         for wall in all_walls:
-            x1, y1 = wall.Start.x, wall.Start.y
-            x2, y2 = wall.End.x, wall.End.y
+            x1, y1 = wall.start.x, wall.start.y
+            x2, y2 = wall.end.x, wall.end.y
             x_min = min(x_min, x1, x2)
             x_max = max(x_max, x1, x2)
             y_min = min(y_min, y1, y2)
@@ -51,8 +51,8 @@ class TM_Environment(TM_Obstacles):
 
         # Classify walls
         for wall in all_walls:
-            start = (wall.Start.x, wall.Start.y)
-            end = (wall.End.x, wall.End.y)
+            start = (wall.start.x, wall.start.y)
+            end = (wall.end.x, wall.end.y)
             if start[1] == end[1]:  # Horizontal
                 y = start[1]
                 x1, x2 = sorted([start[0], end[0]])
@@ -242,8 +242,8 @@ class TM_Environment(TM_Obstacles):
 
         # Draw walls
         for wall in walls:
-            start = (wall.Start.x, wall.Start.y)
-            end = (wall.End.x, wall.End.y)
+            start = (wall.start.x, wall.start.y)
+            end = (wall.end.x, wall.end.y)
             ax.plot([start[0], end[0]], [start[1], end[1]], 'k-', linewidth=2)
 
         # Draw rooms with transparency

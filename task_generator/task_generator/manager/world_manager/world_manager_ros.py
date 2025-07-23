@@ -16,14 +16,13 @@ import rclpy.callback_groups
 import rclpy.client
 import yaml
 from ament_index_python.packages import get_package_share_directory
+from arena_simulation_setup.shared import Position
 
 from task_generator import NodeInterface
 from task_generator.manager.environment_manager import EnvironmentManager
-from task_generator.shared import Position, Wall
 from task_generator.utils.time import Time
 
-from .utils import (WorldMap, WorldObstacleConfiguration,
-                    WorldObstacleConfigurations, WorldWalls, WorldZones, Zone)
+from .utils import WorldMap
 from .world_manager import WorldManager
 
 _DUMMY_MAP_SHAPE = (1, 1)
@@ -110,50 +109,6 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     _map_name: str | None
     _callbacks: list[typing.Callable[[], None]]
 
-    @classmethod
-    def _load_walls(cls, yaml_path: str) -> WorldWalls | None:
-        try:
-            with open(yaml_path) as f:
-                walls_yaml = yaml.safe_load(f)
-            walls: WorldWalls = [
-                Wall.parse(wall)
-                for wall
-                in walls_yaml['walls']
-            ]
-            return walls
-        except Exception:
-            return None
-
-    @classmethod
-    def _load_obstacles(cls, yaml_path: str) -> WorldObstacleConfigurations | None:
-        try:
-            with open(yaml_path) as f:
-                obstacles_yaml = yaml.safe_load(f)
-
-            obstacles: WorldObstacleConfigurations = [
-                WorldObstacleConfiguration.parse(obstacle)
-                for obstacle
-                in obstacles_yaml['static']
-            ]
-            return obstacles
-        except Exception:
-            return None
-
-    @classmethod
-    def _load_zones(cls, yaml_path: str) -> WorldZones | None:
-        try:
-            with open(yaml_path) as f:
-                zones_yaml = yaml.safe_load(f)
-
-            zones: WorldZones = [
-                Zone.parse(zone)
-                for zone
-                in zones_yaml
-            ]
-            return zones
-        except Exception:
-            return None
-
     def _shift_map(self, map_dir: str) -> tempfile.TemporaryDirectory:
         """
         Create tmpdir with origin-shifted map.
@@ -164,7 +119,8 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         # create shifted yaml
         target = os.path.join(map_dir, 'map.yaml')
         with open(target, 'r') as f:
-            map_yaml = dict(yaml.safe_load(f))
+            map_yaml = yaml.safe_load(f)
+            assert isinstance(map_yaml, dict), "map.yaml must be a dictionary"
         origin = list(map_yaml.get('origin', [0, 0, 0]))
         shifted_origin = self._environment_manager.realize(
             Position(
@@ -224,18 +180,11 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         return True
 
     def _map_callback(self, costmap: nav_msgs.msg.OccupancyGrid):
-        if self._world.map.time <= costmap.info.map_load_time:
+        if self._map.time <= costmap.info.map_load_time:
 
-            world_config = arena_simulation_setup.world.World(self.world_name)
-
-            obstacles = self._load_obstacles(world_config.map.obstacles)
-            walls = self._load_walls(world_config.map.walls)
-            zones = self._load_zones(world_config.map.zones)
             self.update_world(
-                WorldMap.from_costmap(costmap),
-                obstacles=obstacles,
-                walls=walls,
-                zones=zones,
+                world_map=WorldMap.from_costmap(costmap),
+                world_description=arena_simulation_setup.world.World(self.world_name).load()
             )
 
             self._map_name = self.world_name
@@ -280,7 +229,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._environment_manager = environment_manager
 
         self._callbacks = []
-        self.update_world(world_map=WorldMap.from_costmap(_DUMMY_MAP), obstacles=None, walls=[])
+        self.update_world(world_map=WorldMap.from_costmap(_DUMMY_MAP), world_description=arena_simulation_setup.worlds.world.WorldDescription())
         self._world_name = ''
         self._map_name = None
 
@@ -300,3 +249,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
     @property
     def world_name(self) -> str:
         return self._world_name
+
+    @property
+    def world(self) -> arena_simulation_setup.worlds.world.WorldDescription:
+        return self._world

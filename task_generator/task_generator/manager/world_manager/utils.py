@@ -13,7 +13,7 @@ import scipy.interpolate
 import shapely
 import collections.abc
 
-from task_generator.shared import (Obstacle, Position, Orientation, Pose, PositionRadius, Wall)
+from task_generator.shared import (Obstacle, Position, PositionRadius, Wall)
 from task_generator.utils.time import Time
 
 # CONVERTERS
@@ -39,63 +39,6 @@ def check_list(t: type[T], l: list[T]) -> list[T]:
 
 
 WorldWalls = Collection[Wall]
-WorldObstacles = Collection[Obstacle]
-
-
-@attrs.frozen
-class Zone:
-    label: str
-    category: list[str]
-    polygon: shapely.Polygon
-
-    @classmethod
-    def parse(cls, obj: dict) -> "Zone":
-        return cls(
-            label=obj.get('label', ''),
-            category=[str(v) for v in list_from_any(obj.get('category', []))],
-            polygon=shapely.Polygon(obj['polygon']),
-        )
-
-
-WorldZones = Collection[Zone]
-
-
-@attrs.define()
-class WorldObstacleConfiguration:
-    """
-    only use this for receiving ros messages
-    """
-    pose: Pose
-    model_name: str
-    extra: dict
-
-    @classmethod
-    def parse(cls, obj: dict) -> "WorldObstacleConfiguration":
-
-        x = obj['position'][0]
-        y = obj['position'][1]
-        θ = obj['position'][2]
-
-        return cls(
-            pose=Pose(
-                Position(
-                    x=x,
-                    y=y
-                ),
-                Orientation.from_yaw(θ),
-            ),
-            model_name=obj['model'],
-            extra=obj,
-        )
-
-
-WorldObstacleConfigurations = Collection[WorldObstacleConfiguration]
-
-
-@attrs.define()
-class WorldEntities:
-    obstacles: WorldObstacles
-    walls: WorldWalls
 
 
 class WorldOccupancy:
@@ -297,12 +240,6 @@ class WorldMap:
         return (lo, hi)
 
 
-@attrs.define()
-class World:
-    entities: WorldEntities
-    map: WorldMap
-    zones: WorldZones
-
 # END TYPES
 
 
@@ -387,8 +324,8 @@ class _WallLines(dict[float, list[tuple[float, float]]]):
     def walls(cls, walls: WallsT) -> WorldWalls:
         return [
             Wall(
-                Start=Position(x=sx, y=sy),
-                End=Position(x=ex, y=ey)
+                start=Position(x=sx, y=sy),
+                end=Position(x=ex, y=ey)
             )
             for (sx, sy), (ex, ey) in walls
         ]
@@ -431,22 +368,8 @@ def occupancy_to_walls(
 
     return [
         Wall(
-            Start=transform((wall.Start.x, wall.Start.y)),
-            End=transform((wall.End.x, wall.End.y)),
+            start=transform((wall.start.x, wall.start.y)),
+            end=transform((wall.end.x, wall.end.y)),
         )
         for wall in walls
     ]
-
-
-def configurations_to_obstacles(
-    configurations: Collection[WorldObstacleConfiguration]
-) -> WorldObstacles:
-
-    name_gen = itertools.count()
-
-    return [Obstacle(
-        pose=configuration.pose,
-        name=f"world_obstacle_{next(name_gen)}",
-        model=configuration.model_name,
-        extra=configuration.extra
-    ) for configuration in configurations]

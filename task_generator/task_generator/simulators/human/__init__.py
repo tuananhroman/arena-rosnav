@@ -48,7 +48,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
     def spawn_obstacles(
         self,
-        obstacles: Sequence[Obstacle]
+        obstacles: Sequence[Obstacle],
+        layer: ObstacleLayer = ObstacleLayer.INUSE
     ):
         """
         Loads given obstacles into the simulator.
@@ -61,11 +62,11 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
                 known.obstacle = obstacle
                 self._simulator.move_entity(known.obstacle.name, known.obstacle.pose)
-                known.layer = ObstacleLayer.INUSE
+                known.layer = layer
             else:
                 known = self._known_obstacles.create_or_get(
                     name=obstacle.name,
-                    obstacle=obstacle
+                    obstacle=obstacle,
                 )
             if not known.spawned:
                 unspawneds.append(known)
@@ -78,7 +79,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
 
             if known.layer == ObstacleLayer.UNUSED:
                 if self._simulator.spawn_entity(known.obstacle):
-                    known.layer = ObstacleLayer.INUSE
+                    known.layer = layer
 
     def spawn_dynamic_obstacles(
         self,

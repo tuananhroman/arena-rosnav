@@ -124,6 +124,7 @@
 			"${workspaceFolder:root}/build/hunav_msgs/",
 			"${workspaceFolder:root}/build/launch/",
 			"${workspaceFolder:root}/build/launch_ros/",
+			"${workspaceFolder:arena-rosnav}/.venv/lib/python3.10/site-packages/"
 		],
 		"python.analysis.extraPaths": [
 			"${workspaceFolder:root}/build/task_generator/",
@@ -141,6 +142,7 @@
 			"${workspaceFolder:root}/build/arena_rclpy_mixins/",
 			"${workspaceFolder:root}/build/launch/",
 			"${workspaceFolder:root}/build/launch_ros/",
+			"${workspaceFolder:arena-rosnav}/.venv/lib/python3.10/site-packages/"
 		]
 	}
 }

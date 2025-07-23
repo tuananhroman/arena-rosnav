@@ -6,7 +6,7 @@ from typing import Any
 import attrs
 
 from task_generator import NodeInterface
-from task_generator.manager.world_manager.utils import World
+from arena_simulation_setup.worlds.world import WorldDescription
 from task_generator.shared import (DynamicObstacle, Entity, Obstacle,
                                    Orientation, Pose, Position, Robot, Wall)
 from task_generator.simulators.human import BaseHumanSimulator
@@ -63,8 +63,8 @@ class _Realizer:
     def _realize_wall(self, wall: Wall) -> Wall:
         return attrs.evolve(
             wall,
-            Start=self._realize_position(wall.Start),
-            End=self._realize_position(wall.End),
+            start=self._realize_position(wall.start),
+            end=self._realize_position(wall.end),
         )
 
     def realize(
@@ -92,7 +92,7 @@ class _Realizer:
 class EnvironmentManager(NodeInterface, _Realizer):
 
     _namespace: str
-    _entity_manager: BaseHumanSimulator
+    _human_simulator: BaseHumanSimulator
     _simulator: BaseSim
 
     id_generator: Iterator[int]
@@ -107,7 +107,7 @@ class EnvironmentManager(NodeInterface, _Realizer):
 
         self._namespace = namespace
         self._simulator = simulator
-        self._entity_manager = entity_manager
+        self._human_simulator = entity_manager
 
         ref_x, ref_y = self.node.rosparam[tuple[float, float]].get('reference', [0.0, 0.0])
         prefix = self.node.rosparam[str].get('prefix', '')
@@ -119,45 +119,52 @@ class EnvironmentManager(NodeInterface, _Realizer):
 
         self.id_generator = itertools.count(434)
 
-    def spawn_world_obstacles(self, world: World):
+    def spawn_world_obstacles(self, world: WorldDescription):
         """
         Loads given obstacles into the simulator,
         the map file is retrieved from launch parameter "world"
         """
 
-        walls = world.entities.walls
+        walls = list(world.all_walls)
 
         if walls:
-            self._entity_manager.spawn_walls(list(map(self._realize_wall, walls)))
-        self._entity_manager.spawn_obstacles(list(map(self._realize_entity, world.entities.obstacles)))
+            self._human_simulator.spawn_walls(list(map(self._realize_wall, walls)))
+        self._human_simulator.spawn_obstacles(
+            list(map(self._realize_entity, world.all_static_entities)),
+            layer=ObstacleLayer.WORLD
+        )
 
     def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """
         Loads given dynamic obstacles into the simulator.
         """
 
-        self._entity_manager.spawn_dynamic_obstacles(obstacles=list(map(self._realize_entity, setups)))
+        self._human_simulator.spawn_dynamic_obstacles(
+            list(map(self._realize_entity, setups))
+        )
 
     def spawn_obstacles(self, setups: Collection[Obstacle]):
         """
         Loads given obstacles into the simulator.
         """
 
-        self._entity_manager.spawn_obstacles(obstacles=list(map(self._realize_entity, setups)))
+        self._human_simulator.spawn_obstacles(
+            list(map(self._realize_entity, setups))
+        )
 
     def spawn_robot(self, robot: Robot) -> Robot:
         """
         Loads given robot into the simulator
         """
         robot = self._realize_entity(robot)
-        self._entity_manager.spawn_robot(robot)
+        self._human_simulator.spawn_robot(robot)
         return robot
 
     def move_robot(self, name: str, pose: Pose):
         """
         Moves given robot
         """
-        self._entity_manager.move_robot(
+        self._human_simulator.move_robot(
             name=name,
             pose=self._realize_pose(pose),
         )
@@ -167,12 +174,12 @@ class EnvironmentManager(NodeInterface, _Realizer):
         Unuse obstacles, (re-)use them in callback, finally remove unused obstacles
         @callback: Function to call between unuse and remove
         """
-        self._entity_manager.unuse_obstacles()
+        self._human_simulator.unuse_obstacles()
         callback()
-        self._entity_manager.remove_obstacles(purge=ObstacleLayer.UNUSED)
+        self._human_simulator.remove_obstacles(purge=ObstacleLayer.UNUSED)
 
     def reset(self, purge: ObstacleLayer = ObstacleLayer.INUSE):
         """
         Unuse and remove all obstacles
         """
-        self._entity_manager.remove_obstacles(purge=purge)
+        self._human_simulator.remove_obstacles(purge=purge)
