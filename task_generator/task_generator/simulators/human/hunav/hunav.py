@@ -231,7 +231,10 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
         self._gz_plugin_spawned: bool = False
         self._last_updated_agents = None
-        self._last_smooth_yaws = {} 
+        self._last_smooth_yaws = {}
+        # Orientation smoothing (wie Isaac Wrapper)
+        self._agent_previous_orientations = {}
+        self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
         
 
 
@@ -852,42 +855,56 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
+                            # Berechne Velocity aus Positionsänderung (wie Plugin)
+                            calculated_vel_x, calculated_vel_y = self._calculate_velocity_from_position_change(updated_agent, arena_ped)
+
                             # Position updates
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
-                            #arena_ped.twist = updated_agent.velocity
-                            arena_ped.twist.linear.x = updated_agent.velocity.linear.x
-                            arena_ped.twist.linear.y = updated_agent.velocity.linear.y
+
+                            # Setze calculated velocity (statt HuNav velocity!)
+                            arena_ped.twist.linear.x = calculated_vel_x
+                            arena_ped.twist.linear.y = calculated_vel_y
                             arena_ped.twist.linear.z = 0.0
 
-                            
                             arena_ped.twist.angular.x = 0.0
                             arena_ped.twist.angular.y = 0.0
                             arena_ped.twist.angular.z = 0.0  
-                            
+
+                            import math
                             import tf_transformations
-                            current_quat = [
-                                arena_ped.position.orientation.x,
-                                arena_ped.position.orientation.y, 
-                                arena_ped.position.orientation.z,
-                                arena_ped.position.orientation.w
-                            ]
-                            _, _, current_yaw = tf_transformations.euler_from_quaternion(current_quat)
+
                             
-                            
-                            movement_yaw = self._calculate_movement_yaw(updated_agent)
-                            if movement_yaw is not None:
-                                
-                                smooth_yaw = self._smooth_yaw(movement_yaw, current_yaw)
+                            # Intelligente Orientierungs-Berechnung (MIT CALCULATED VELOCITY!)
+                            vel_x = calculated_vel_x  # ← RICHTIG!
+                            vel_y = calculated_vel_y  # ← RICHTIG!
+                            velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
+
+                            if velocity_magnitude > 0.05:
+                                # Bei Bewegung: Orientierung aus Velocity (präziser)
+                                target_yaw = math.atan2(vel_y, vel_x)
                             else:
-                               
-                                smooth_yaw = current_yaw
-                            
-              
-                            quat = tf_transformations.quaternion_from_euler(0, 0, smooth_yaw)
+                                # Bei Stillstand: Orientierung aus HuNav yaw (damit er sich trotzdem dreht)
+                                target_yaw = updated_agent.yaw
+
+                            # Smoothing anwenden
+                            smoothed_yaw = self._smooth_yaw_slerp(target_yaw, arena_ped.id)
+
+                            # Setze Orientierung
+                            quat = tf_transformations.quaternion_from_euler(0, 0, smoothed_yaw)
                             arena_ped.position.orientation.x = quat[0]
-                            arena_ped.position.orientation.y = quat[1]
+                            arena_ped.position.orientation.y = quat[1] 
                             arena_ped.position.orientation.z = quat[2]
                             arena_ped.position.orientation.w = quat[3]
+
+                            # HIER DIESE ZEILEN EINFÜGEN:
+                            updated_agent.velocity.linear.x = calculated_vel_x
+                            updated_agent.velocity.linear.y = calculated_vel_y
+                            updated_agent.yaw = smoothed_yaw
+                            updated_agent.position.orientation.x = quat[0]
+                            updated_agent.position.orientation.y = quat[1]
+                            updated_agent.position.orientation.z = quat[2]
+                            updated_agent.position.orientation.w = quat[3]
+
                             break
             
             # Publish
@@ -908,7 +925,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         diff = normalize_angle(new_yaw - current_yaw)
         
         if abs(diff) > math.radians(25):  
-            return normalize_angle(current_yaw + (diff * 0.01))  
+            return normalize_angle(current_yaw + (diff * 0.1))  
         else:
             return current_yaw
 
@@ -946,3 +963,93 @@ class HunavHumanSimulator(DummyHumanSimulator):
             return None
 
 
+    def _calculate_velocity_from_position_change(self, updated_agent, arena_ped, dt=0.1):
+        """Berechne Velocity aus Positionsänderung wie HuNavSystemPlugin"""
+        import math
+        
+        # Previous position (aus arena_ped)
+        prev_x = arena_ped.position.position.x
+        prev_y = arena_ped.position.position.y
+        
+        # Current position (von HuNav)
+        curr_x = updated_agent.position.position.x
+        curr_y = updated_agent.position.position.y
+        
+        # Berechne Velocity aus Position difference
+        vel_x = (curr_x - prev_x) / dt
+        vel_y = (curr_y - prev_y) / dt
+        
+        # Speed limiting (wie Plugin)
+        velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
+        if velocity_magnitude > updated_agent.desired_velocity:
+            # Begrenze auf desired_velocity
+            scale_factor = updated_agent.desired_velocity / velocity_magnitude
+            vel_x *= scale_factor
+            vel_y *= scale_factor
+        
+        return vel_x, vel_y
+
+
+    
+    def _slerp_quaternions(self, q1_list, q2_list, t):
+        """Spherical linear interpolation between two quaternions"""
+        import math
+        
+        # Manual quaternion normalization
+        def normalize_quat(q):
+            norm = math.sqrt(sum(x*x for x in q))
+            return [x/norm for x in q] if norm > 0 else [0, 0, 0, 1]
+        
+        # Convert lists to normalized quaternions
+        q1 = normalize_quat(q1_list)
+        q2 = normalize_quat(q2_list)
+        
+        # Calculate dot product
+        dot = sum(a * b for a, b in zip(q1, q2))
+        
+        # If dot product is negative, negate one quaternion for shorter path
+        if dot < 0.0:
+            q2 = [-x for x in q2]
+            dot = -dot
+        
+        # If quaternions are very close, use linear interpolation
+        if dot > 0.9995:
+            result = [q1[i] + t * (q2[i] - q1[i]) for i in range(4)]
+            return normalize_quat(result)
+        
+        # Calculate spherical interpolation
+        theta_0 = math.acos(abs(dot))
+        sin_theta_0 = math.sin(theta_0)
+        theta = theta_0 * t
+        sin_theta = math.sin(theta)
+        
+        s0 = math.cos(theta) - dot * sin_theta / sin_theta_0
+        s1 = sin_theta / sin_theta_0
+        
+        result = [s0 * q1[i] + s1 * q2[i] for i in range(4)]
+        return normalize_quat(result)
+
+
+    def _smooth_yaw_slerp(self, target_yaw, agent_id):
+        """Smooth yaw transitions like Isaac wrapper"""
+        import math
+        
+        def normalize_angle(angle):
+            return math.atan2(math.sin(angle), math.cos(angle))
+        
+        target_yaw = normalize_angle(target_yaw)
+        
+        if agent_id in self._agent_previous_orientations:
+            prev_yaw = self._agent_previous_orientations[agent_id]
+            yaw_diff = normalize_angle(target_yaw - prev_yaw)
+            
+            # Smooth interpolation
+            smoothed_yaw = prev_yaw + yaw_diff * self._orientation_smoothing_factor
+            smoothed_yaw = normalize_angle(smoothed_yaw)
+        else:
+            smoothed_yaw = target_yaw
+        
+        # Store for next frame
+        self._agent_previous_orientations[agent_id] = smoothed_yaw
+        
+        return smoothed_yaw
