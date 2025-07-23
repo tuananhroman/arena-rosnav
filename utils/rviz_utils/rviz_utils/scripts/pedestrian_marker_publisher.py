@@ -187,7 +187,7 @@ class PedestrianMarkerPublisher(Node):
         
         return marker
 
-    def _create_head_marker(self, pedestrian: Pedestrian, pedestrian_id: int, color: ColorRGBA,  # ← CHANGED: Pedestrian type
+    def _create_head_marker(self, pedestrian: Pedestrian, pedestrian_id: int, color: ColorRGBA,  
                            head_radius: float, body_height: float, header) -> Marker:
         """Create sphere marker for pedestrian head"""
         marker = Marker()
@@ -198,8 +198,8 @@ class PedestrianMarkerPublisher(Node):
         marker.action = Marker.ADD
         
         # Position on top of body
-        marker.pose.position.x = pedestrian.position.position.x  # ← CHANGED: pedestrian.position.position.x
-        marker.pose.position.y = pedestrian.position.position.y  # ← CHANGED: pedestrian.position.position.y
+        marker.pose.position.x = pedestrian.position.position.x  
+        marker.pose.position.y = pedestrian.position.position.y  
         marker.pose.position.z = body_height + head_radius
         marker.pose.orientation.w = 1.0
         
@@ -214,7 +214,7 @@ class PedestrianMarkerPublisher(Node):
         
         return marker
 
-    def _create_orientation_arrow(self, pedestrian: Pedestrian, pedestrian_id: int,  # ← CHANGED: Pedestrian type
+    def _create_orientation_arrow(self, pedestrian: Pedestrian, pedestrian_id: int,  
                                 arrow_length: float, body_height: float, header) -> Marker:
         """Create arrow marker showing pedestrian orientation"""
         marker = Marker()
@@ -225,12 +225,12 @@ class PedestrianMarkerPublisher(Node):
         marker.action = Marker.ADD
         
         # Position at pedestrian location
-        marker.pose.position.x = pedestrian.position.position.x  # ← CHANGED: pedestrian.position.position.x
-        marker.pose.position.y = pedestrian.position.position.y  # ← CHANGED: pedestrian.position.position.y
+        marker.pose.position.x = pedestrian.position.position.x  
+        marker.pose.position.y = pedestrian.position.position.y  
         marker.pose.position.z = body_height / 2
         
         # Orientation from pedestrian orientation
-        marker.pose.orientation = pedestrian.position.orientation  # ← CHANGED: Direct orientation
+        marker.pose.orientation = pedestrian.position.orientation  
         
         # Size
         marker.scale = Vector3(x=arrow_length, y=0.15, z=0.15)
@@ -243,7 +243,7 @@ class PedestrianMarkerPublisher(Node):
         
         return marker
 
-    def _create_velocity_arrow(self, pedestrian: Pedestrian, pedestrian_id: int,  # ← CHANGED: Pedestrian type
+    def _create_velocity_arrow(self, pedestrian: Pedestrian, pedestrian_id: int,  
                              arrow_length: float, body_height: float, header) -> Marker:
         """Create arrow marker showing pedestrian velocity direction"""
         marker = Marker()
@@ -254,13 +254,13 @@ class PedestrianMarkerPublisher(Node):
         marker.action = Marker.ADD
         
         # Position at pedestrian location
-        marker.pose.position.x = pedestrian.position.position.x  # ← CHANGED: pedestrian.position.position.x
-        marker.pose.position.y = pedestrian.position.position.y  # ← CHANGED: pedestrian.position.position.y
-        marker.pose.position.z = body_height / 2 + 0.2  # Slightly above orientation arrow
+        marker.pose.position.x = pedestrian.position.position.x  
+        marker.pose.position.y = pedestrian.position.position.y  
+        marker.pose.position.z = body_height / 2 + 0.2  
         
         # Orientation from velocity direction
-        vel_x = pedestrian.twist.linear.x  # ← CHANGED: pedestrian.twist.linear.x
-        vel_y = pedestrian.twist.linear.y  # ← CHANGED: pedestrian.twist.linear.y
+        vel_x = pedestrian.twist.linear.x  
+        vel_y = pedestrian.twist.linear.y  
         yaw = math.atan2(vel_y, vel_x)
         
         marker.pose.orientation.z = math.sin(yaw/2)
@@ -279,7 +279,7 @@ class PedestrianMarkerPublisher(Node):
         
         return marker
 
-    def _create_name_label(self, pedestrian: Pedestrian, pedestrian_id: int,  # ← CHANGED: Pedestrian type
+    def _create_name_label(self, pedestrian: Pedestrian, pedestrian_id: int,  
                           body_height: float, header) -> Marker:
         """Create text marker with pedestrian name"""
         marker = Marker()
@@ -290,13 +290,13 @@ class PedestrianMarkerPublisher(Node):
         marker.action = Marker.ADD
         
         # Position above head
-        marker.pose.position.x = pedestrian.position.position.x  # ← CHANGED: pedestrian.position.position.x
-        marker.pose.position.y = pedestrian.position.position.y  # ← CHANGED: pedestrian.position.position.y
+        marker.pose.position.x = pedestrian.position.position.x  
+        marker.pose.position.y = pedestrian.position.position.y  
         marker.pose.position.z = 0.0 + body_height + 0.5  # Ground + body + label offset
         marker.pose.orientation.w = 1.0
         
         # Text content - use pedestrian name
-        marker.text = f"Agent {pedestrian.name}"  # ← CHANGED: pedestrian.name
+        marker.text = f"Agent {pedestrian.name}"  
         
         # Size
         marker.scale.z = 0.3  # Text height
