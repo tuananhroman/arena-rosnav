@@ -25,7 +25,7 @@ class TM_Environment(TM_Obstacles):
     _config: ROSParamT[_ParsedConfig]
 
     def calculate_world_bounds(self):
-        all_walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
+        all_walls = list(self._PROPS.world_manager.world.all_walls)
         x_min = y_min = np.inf
         x_max = y_max = -np.inf
 
@@ -46,7 +46,7 @@ class TM_Environment(TM_Obstacles):
         else:
             door_threshold = float(door_threshold)
 
-        all_walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
+        all_walls = list(self._PROPS.world_manager.world.all_walls)
         horizontal, vertical = [], []
 
         # Classify walls
@@ -369,11 +369,9 @@ class TM_Environment(TM_Obstacles):
         static_obstacles: list[Obstacle] = []
         dynamic_obstacles: list[DynamicObstacle] = []
 
-        if (zones := self.node._world_manager.zones):
-            rooms = [zone.polygon for zone in zones]
+        if (zones := self._PROPS.world_manager.world.zones):
+            rooms = [shapely.Polygon(zone.corners) for zone in zones]
         else:
-            walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
-            # print(walls)
             rooms = [shapely.Polygon(room) for room in self._create_rooms_from_walls()]
             # if not rooms:
             # print("[WARNING] No rooms found! (check your walls data)")
@@ -397,7 +395,7 @@ class TM_Environment(TM_Obstacles):
             margin = group.get("margin", 0.5)  # Extra margin
 
             # Occupancy grid
-            occupancy_grid = self._PROPS.world_manager.world.map.occupancy.grid
+            occupancy_grid = self._PROPS.world_manager.map.occupancy.grid
 
             # We do a naive tile-based approach: scan each room from bottom-left
             # to top-right in some stride to see if we can place the group.
