@@ -165,8 +165,8 @@ class IsaacSimulator(BaseSim):
         for i, wall in enumerate(walls):
             try:
                 # print(f"wall {i+1}: {wall}")
-                start = [wall.Start.x, wall.Start.y]
-                end = [wall.End.x, wall.End.y]
+                start = [wall.start.x, wall.start.y]
+                end = [wall.end.x, wall.end.y]
                 future = self.services.spawn_wall.client.call(
                     SpawnWall.Request(
                         name=f"wall_{next(self.wall_counter)}",

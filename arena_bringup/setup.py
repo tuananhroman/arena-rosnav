@@ -46,12 +46,14 @@ setup(
     description='Arena bringup package',
     license='MIT',
     tests_require=['pytest'],
+    scripts=['scripts/test.py'],
     entry_points={
-        # 'console_scripts': [
-        #     'gazebo_delete_entity = arena_bringup.launch.testing.simulators.gazebo_delete_entity:main',
-        # ],
+        'console_scripts': [
+            'test = arena_bringup.test:main',
+        ],
         'launch_ros.node_action': [
             'NodeLogLevelExtension = arena_bringup.extensions.NodeLogLevelExtension:NodeLogLevelExtension',
         ],
+
     },
 )
