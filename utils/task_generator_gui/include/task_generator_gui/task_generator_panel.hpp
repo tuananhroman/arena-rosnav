@@ -36,6 +36,7 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QFontMetrics>
+#include <QTextEdit>
 #include "Qt-MultiSelectComboBox/MultiSelectComboBox.h"
 
 namespace task_generator_gui
@@ -133,7 +134,7 @@ namespace task_generator_gui
         // Hash map for seletected obstacles models
         std::vector<int> static_obstacles_models_selected, interactive_obstacles_models_selected, dynamic_obstacles_models_selected;
 
-        // Parameters for Obstacles Task Mode = "Environment" or "Parametrized" or "Scenario"
+        // Parameters for Obstacles Task Mode = "Environment" or "Parametrized" or "Scenario" or "Prompt"
         std::vector<std::string> environment_config_files;
         QStringList environment_config_files_qstringlist;
         std::vector<std::string> parametrized_config_files;
@@ -144,6 +145,7 @@ namespace task_generator_gui
         std::string selected_environment_config_file;
         std::string selected_parametrized_config_file;
         std::string selected_scenario_config_file;
+        std::string typed_prompt;
 
         // UI Components
         QVBoxLayout *root_layout;

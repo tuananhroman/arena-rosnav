@@ -33,6 +33,7 @@ pydantic = "^2.11.5"
 pillow = "^11.2.1"
 requests = "^2.32.4"
 usd-core = "^25.5.1"
+huggingface-hub = "0.33.4"
 
 
 [tool.poetry.group.planners]
