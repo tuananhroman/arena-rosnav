@@ -6,10 +6,12 @@ from huggingface_hub import InferenceClient
 import json
 import itertools
 
+
 @attrs.define()
 class _ParsedConfig:
     static: list[Obstacle]
     dynamic: list[DynamicObstacle]
+
 
 class TM_Prompt(TM_Obstacles):
     """
@@ -28,7 +30,7 @@ class TM_Prompt(TM_Obstacles):
     _config: ROSParamT[_ParsedConfig]
 
     def _prompt_to_config(self, prompt: str) -> dict:
-        return {} # Out of credits
+        return {}  # Out of credits
         response = self.inference_client.chat.completions.create(
             model="moonshotai/Kimi-K2-Instruct",
             messages=[
@@ -55,7 +57,7 @@ class TM_Prompt(TM_Obstacles):
             config = None
 
         return config
-            
+
     def _parse_prompt(self, prompt: str) -> _ParsedConfig:
         """
         Parses the prompt to generate obstacles config.
@@ -118,9 +120,9 @@ class TM_Prompt(TM_Obstacles):
             }
             Do NOT explain anything. Output JSON only. Use realistic (x, y, 0) coordinates.
         """
-        
+
         self._config = self.node.ROSParam[_ParsedConfig](
             self.namespace('user_prompt'),
-            default='empty space',
+            value='empty space',
             parse=self._parse_prompt
         )

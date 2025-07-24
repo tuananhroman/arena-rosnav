@@ -184,7 +184,7 @@ def declare_obstacles():
         return TM_Environment
 
     @TaskFactory.register_obstacles(Constants.TaskMode.TM_Obstacles.PROMPT)
-    def _random():
+    def _prompt():
         from .obstacles.prompt import TM_Prompt
         return TM_Prompt
 
