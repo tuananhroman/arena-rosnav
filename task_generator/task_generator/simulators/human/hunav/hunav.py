@@ -114,6 +114,47 @@ class _PedestrianHelper:
     #     )
 
     @classmethod
+    def plugin_entity(cls, namespace: str) -> Obstacle:
+
+        sdf_content = f"""<?xml version="1.0" ?>
+            <sdf version="1.9">
+                <model name="human_plugin">
+                    <static>true</static>
+                    <link name="empty">
+                        <visual name="visual">
+                            <geometry>
+                                <box>
+                                    <size>0.01 0.01 0.01</size>
+                                </box>
+                            </geometry>
+                        </visual>
+                    </link>
+                    <plugin name="HumanSystemPlugin" filename="libHumanSystemPlugin.so">
+                        <update_rate>1000.0</update_rate>
+                        <namespace>{namespace}</namespace>
+                        <global_frame_to_publish>map</global_frame_to_publish>
+                        <pedestrians_topic>arena_peds</pedestrians_topic>
+                    </plugin>
+                </model>
+            </sdf>"""
+
+        return Obstacle(
+            name="human_plugin",
+            pose=Pose(Position(x=0.0, y=0.0, z=-1.0)),
+            model=ModelWrapper.Constant("human_plugin", {
+                ModelType.SDF: Model(
+                    type=ModelType.SDF,
+                    name="human_plugin",
+                    description=sdf_content,
+                    path="",
+                )
+            })
+        )
+
+
+
+
+    @classmethod
     def create_sdf(cls, agent_config: HunavDynamicObstacle) -> str:
         """Create SDF description for pedestrian using gz-sim actor format"""
 
@@ -462,9 +503,9 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                 if self._simulator_type == Constants.SimSimulator.GAZEBO:
                     # spawn plugin if not already spawned
-                    # if not self._gz_plugin_spawned:
-                    #     self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
-                    #     self._gz_plugin_spawned = True
+                    if not self._gz_plugin_spawned:
+                        self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
+                        self._gz_plugin_spawned = True
 
                     # Create SDF with plugin for Gazebo
                     sdf = _PedestrianHelper.create_sdf(hunav_obstacle)
