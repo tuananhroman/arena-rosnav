@@ -1,15 +1,16 @@
-from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, Obstacles, TM_Obstacles
+from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, CustomDynamicObstacle, Obstacles, CustomObstacles, TM_Obstacles
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 import os
-from huggingface_hub import InferenceClient
-from transformers import AutoModelForCausalLM, AutoTokenizer
 from arena_simulation_setup.worlds.world import World
 import json
 import itertools
 import time
 import yaml
+from openai import OpenAI
 
+LOCAL_LM = "Qwen/Qwen3-0.6B"
+REMOTE_LM = "gemini-2.5-flash"
 
 @attrs.define()
 class _ParsedConfig:
@@ -33,7 +34,7 @@ class TM_Prompt(TM_Obstacles):
 
     _config: ROSParamT[_ParsedConfig]
 
-    def _prompt_to_config(self, prompt: str, local: bool=True) -> dict:
+    def _prompt_to_config(self, prompt: str, local: bool=False) -> dict:
         world = World(self.node._world_manager.world_name)
         with open(world.world_path) as file:
             zones = yaml.safe_load(file).get("zones", {})
@@ -49,13 +50,14 @@ class TM_Prompt(TM_Obstacles):
                 "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format above,  with no explanation, thoughts, or extra text."
             }
         ]
-
-        if local:
-            model_name = "Qwen/Qwen3-0.6B"
+        if local: # Currently not supported
+            return {}
+            from huggingface_hub import InferenceClient
+            from transformers import AutoModelForCausalLM, AutoTokenizer
 
             # Load tokenizer and model
-            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
-            model = AutoModelForCausalLM.from_pretrained(model_name)
+            tokenizer = AutoTokenizer.from_pretrained(LOCAL_LM, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(LOCAL_LM)
             # Format using Qwen chat template
             prompt_text = tokenizer.apply_chat_template(
                 messages,
@@ -83,10 +85,19 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().info(f"Inference done, took: {end-start:.1f}s")
 
         else:
-            self.node.get_logger().info("Start inference...")
+            if "GEMINI_API_KEY" not in os.environ:
+                self.node.get_logger().error("GEMINI_API_KEY environment variable not set!")
+                self.node.get_logger().error("Returning empty config!")
+                return {}
+            
+            self.inference_client = OpenAI(
+                api_key=os.environ["GEMINI_API_KEY"],
+                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+            )
+            self.node.get_logger().warn("Start inference...")
             start = time.time()
             response = self.inference_client.chat.completions.create(
-                model="moonshotai/Kimi-K2-Instruct",
+                model=REMOTE_LM,
                 messages=messages,
                 temperature=0.3,
                 top_p=0.9,
@@ -95,7 +106,7 @@ class TM_Prompt(TM_Obstacles):
 
             answer = response.choices[0].message.content
             end = time.time()
-            self.node.get_logger().info(f"Inference done, took: {end-start:.1f}s")
+            self.node.get_logger().warn(f"Inference done, took: {end-start:.1f}s")
 
         if answer.startswith("```json"):
             answer = answer.strip("```json").strip("```").strip()
@@ -137,22 +148,22 @@ class TM_Prompt(TM_Obstacles):
         ]
 
         dynamic_obstacles = [
-            DynamicObstacle.parse(obs)
+            CustomDynamicObstacle.parse(obs)
             for obs
             in config.get("obstacles", {}).get("dynamic", [])
         ]
 
         return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
 
-    def reset(self, **kwargs) -> Obstacles:
+    def reset(self, **kwargs) -> CustomObstacles:
         return self._config.value.static, self._config.value.dynamic
 
     def __init__(self, **kwargs):
         TM_Obstacles.__init__(self, **kwargs)
-        self.inference_client = InferenceClient(
-            provider="together",
-            api_key=os.environ["HF_TOKEN"],
-        )
+        # self.inference_client = InferenceClient(
+        #     provider="together",
+        #     api_key=os.environ["HF_TOKEN"],
+        # )
 
         self.context = """
             You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map.
