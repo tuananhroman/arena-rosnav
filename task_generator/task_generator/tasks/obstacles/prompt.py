@@ -3,8 +3,12 @@ import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 import os
 from huggingface_hub import InferenceClient
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from arena_simulation_setup.worlds.world import World
 import json
 import itertools
+import time
+import yaml
 
 
 @attrs.define()
@@ -29,20 +33,69 @@ class TM_Prompt(TM_Obstacles):
 
     _config: ROSParamT[_ParsedConfig]
 
-    def _prompt_to_config(self, prompt: str) -> dict:
-        return {}  # Out of credits
-        response = self.inference_client.chat.completions.create(
-            model="moonshotai/Kimi-K2-Instruct",
-            messages=[
-                {"role": "system", "content": self.context},
-                {"role": "user", "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format above,  with no explanation, thoughts, or extra text."}
-            ],
-            temperature=0.3,
-            top_p=0.9,
-            stream=False,
-        )
+    def _prompt_to_config(self, prompt: str, local: bool=True) -> dict:
+        world = World(self.node._world_manager.world_name)
+        with open(world.world_path) as file:
+            zones = yaml.safe_load(file).get("zones", {})
+        world_info = json.dumps(zones)
 
-        answer = response.choices[0].message.content
+        messages = [
+            {
+                "role": "system",
+                "content": f"{self.context}. Generate data base on this world data as below: {world_info}"
+            },
+            {
+                "role": "user", 
+                "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format above,  with no explanation, thoughts, or extra text."
+            }
+        ]
+
+        if local:
+            model_name = "Qwen/Qwen3-0.6B"
+
+            # Load tokenizer and model
+            tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            # Format using Qwen chat template
+            prompt_text = tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True,
+                enable_thinking=False,
+            )
+
+            self.node.get_logger().info("Start inference...")
+            start = time.time()
+
+            # Tokenize input
+            inputs = tokenizer([prompt_text], return_tensors="pt").to(model.device)
+            
+            # Generate output
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=32768,
+            )
+
+            # Extract generated tokens (excluding prompt)
+            generated_ids = outputs[0][len(inputs.input_ids[0]):]
+            answer = tokenizer.decode(generated_ids, skip_special_tokens=True).strip()
+            end = time.time()
+            self.node.get_logger().info(f"Inference done, took: {end-start:.1f}s")
+
+        else:
+            self.node.get_logger().info("Start inference...")
+            start = time.time()
+            response = self.inference_client.chat.completions.create(
+                model="moonshotai/Kimi-K2-Instruct",
+                messages=messages,
+                temperature=0.3,
+                top_p=0.9,
+                stream=False,
+            )
+
+            answer = response.choices[0].message.content
+            end = time.time()
+            self.node.get_logger().info(f"Inference done, took: {end-start:.1f}s")
 
         if answer.startswith("```json"):
             answer = answer.strip("```json").strip("```").strip()
@@ -53,8 +106,9 @@ class TM_Prompt(TM_Obstacles):
         try:
             config = json.loads(answer)
         except json.JSONDecodeError as e:
-            print("Failed to parse JSON:", e)
-            config = None
+            self.node.get_logger().error("Failed to parse JSON from LLM response:", e)
+            self.node.get_logger().error("Returning empty config!")
+            config = {}
 
         return config
 
@@ -101,7 +155,7 @@ class TM_Prompt(TM_Obstacles):
         )
 
         self.context = """
-            You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation in an indoor hospital environment.
+            You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map.
 
             Output must strictly follow this structure:
             ```json
@@ -119,6 +173,17 @@ class TM_Prompt(TM_Obstacles):
             ]
             }
             Do NOT explain anything. Output JSON only. Use realistic (x, y, 0) coordinates.
+
+            The world information is provided in this JSON-formated data as described below: The map is composed of a list of zones. Each zone has the following fields:
+            - `description`: a human-readable name of the zone.
+            - `name`: a unique identifier.
+            - `walls`: a list of wall segments, each defined by two 2D points [[x1, y1], [x2, y2]].
+            - `corners`: a list of 2D points [x, y] marking the zone's corners.
+            - `mat`: the material of the floor (can be empty).
+            - `entities`: contains static objects in the zone. Each static object has:
+            - `name`: the object's unique name.
+            - `model`: the type of object (e.g., `shelf`).
+            - `pose`: a list [x, y, yaw] representing the object's position and rotation.
         """
 
         self._config = self.node.ROSParam[_ParsedConfig](
