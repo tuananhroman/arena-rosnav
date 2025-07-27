@@ -5,7 +5,7 @@ import arena_simulation_setup.configs.parametrized
 import arena_simulation_setup.entities.obstacles.dynamic
 import arena_simulation_setup.entities.obstacles.static
 import arena_simulation_setup.entities.robot
-import arena_simulation_setup.world
+import arena_simulation_setup.worlds
 import launch
 import rclpy
 import std_srvs.srv as std_srvs
@@ -241,7 +241,7 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         request: task_generator_msgs.srv.GetScenarios.Request,
         response: task_generator_msgs.srv.GetScenarios.Response,
     ):
-        response.scenarios = arena_simulation_setup.world.World(
+        response.scenarios = arena_simulation_setup.worlds.World(
             request.world or self._world_manager.world_name
         ).scenario.list()
         return response
@@ -251,7 +251,7 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         request: task_generator_msgs.srv.GetWorlds.Request,
         response: task_generator_msgs.srv.GetWorlds.Response,
     ):
-        response.worlds = arena_simulation_setup.world.World.list()
+        response.worlds = arena_simulation_setup.worlds.World.list()
         return response
 
     def _cb_get_robots(

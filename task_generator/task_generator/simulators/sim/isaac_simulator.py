@@ -19,12 +19,13 @@ from isaacsim_msgs.srv import (
     SpawnWall,
     UrdfToUsd,
     MovePed,
+    SpawnFloor
 )
 from isaacsim_msgs.msg import Person, NavPed
 from task_generator.shared import DynamicObstacle, ModelType, Obstacle, Robot
 from task_generator.simulators.sim import BaseSim
 import itertools
-
+import numpy as np 
 
 @attrs.define()
 class _Service:
@@ -52,6 +53,7 @@ class _Services(typing.NamedTuple):
     move_prim: _Service
     delete_prim: _Service
     spawn_wall: _Service
+    spawn_floor: _Service
     import_pedestrians: _Service
     move_pedestrians: _Service
     delete_all_pedestrians: _Service
@@ -75,6 +77,7 @@ class IsaacSimulator(BaseSim):
             ),
             move_prim=_Service(type_=MovePrim, name="isaac/move_prim"),
             spawn_wall=_Service(type_=SpawnWall, name="isaac/spawn_wall"),
+            spawn_floor=_Service(type_=SpawnFloor,name='isaac/spawn_floor'),
             import_obstacle=_Service(
                 type_=ImportObstacles, name="isaac/import_obstacle"
             ),
@@ -172,7 +175,8 @@ class IsaacSimulator(BaseSim):
                         name=f"wall_{next(self.wall_counter)}",
                         start=start,
                         end=end,
-                        height=wall.height
+                        height=wall.height,
+                        material='Mahogany'
                     )
                 )
 
@@ -333,6 +337,15 @@ class IsaacSimulator(BaseSim):
         self.init_service_clients()
         self.wall_counter = itertools.count()
         self._all_removed: bool = True
+        future = self.services.spawn_floor.client.call(
+                    SpawnFloor.Request(
+                        name=f"wall_{next(self.wall_counter)}",
+                        x_length=15.0,
+                        y_length=15.0,
+                        pos=[0.0,0.0],
+                        material='Mahogany'
+                    )
+                )
         self._logger.info(
             f"Done initializing Isaac Sim")
 
