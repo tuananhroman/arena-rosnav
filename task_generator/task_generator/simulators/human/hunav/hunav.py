@@ -68,50 +68,50 @@ class _PedestrianHelper:
         8: 1.05
     }
 
-    # @classmethod
-    # def plugin_entity(cls, namespace: str) -> Obstacle:
+    @classmethod
+    def hunav_plugin_entity(cls, namespace: str) -> Obstacle:
 
-    #     sdf_content = f"""<?xml version="1.0" ?>
-    #         <sdf version="1.9">
-    #             <model name="hunav_plugin">
-    #                 <static>true</static>
-    #                 <link name="empty">
-    #                     <visual name="visual">
-    #                         <geometry>
-    #                             <box>
-    #                                 <size>0.01 0.01 0.01</size>
-    #                             </box>
-    #                         </geometry>
-    #                     </visual>
-    #                 </link>
-    #                 <plugin name="HuNavSystemPluginIGN" filename="libHuNavSystemPluginIGN.so">
-    #                     <update_rate>1000.0</update_rate>
-    #                     <namespace>{namespace}</namespace>
-    #                     <!-- <robot_name>jackal</robot_name> -->
-    #                     <use_gazebo_obs>true</use_gazebo_obs>
-    #                     <global_frame_to_publish>map</global_frame_to_publish>
-    #                     <use_navgoal_to_start>false</use_navgoal_to_start>
-    #                     <navgoal_topic>goal_pose</navgoal_topic>
-    #                     <ignore_models>
-    #                         <model>ground_plane</model>
-    #                         <model>sun</model>
-    #                     </ignore_models>
-    #                 </plugin>
-    #             </model>
-    #         </sdf>"""
+        sdf_content = f"""<?xml version="1.0" ?>
+            <sdf version="1.9">
+                <model name="hunav_plugin">
+                    <static>true</static>
+                    <link name="empty">
+                        <visual name="visual">
+                            <geometry>
+                                <box>
+                                    <size>0.01 0.01 0.01</size>
+                                </box>
+                            </geometry>
+                        </visual>
+                    </link>
+                    <plugin name="HuNavSystemPluginIGN" filename="libHuNavSystemPluginIGN.so">
+                        <update_rate>1000.0</update_rate>
+                        <namespace>{namespace}</namespace>
+                        <!-- <robot_name>jackal</robot_name> -->
+                        <use_gazebo_obs>true</use_gazebo_obs>
+                        <global_frame_to_publish>map</global_frame_to_publish>
+                        <use_navgoal_to_start>false</use_navgoal_to_start>
+                        <navgoal_topic>goal_pose</navgoal_topic>
+                        <ignore_models>
+                            <model>ground_plane</model>
+                            <model>sun</model>
+                        </ignore_models>
+                    </plugin>
+                </model>
+            </sdf>"""
 
-    #     return Obstacle(
-    #         name="hunav_plugin",
-    #         pose=Pose(Position(x=0.0, y=0.0, z=-1.0)),
-    #         model=ModelWrapper.Constant("hunav_plugin", {
-    #             ModelType.SDF: Model(
-    #                 type=ModelType.SDF,
-    #                 name="hunav_plugin",
-    #                 description=sdf_content,
-    #                 path="",
-    #             )
-    #         })
-    #     )
+        return Obstacle(
+            name="hunav_plugin",
+            pose=Pose(Position(x=0.0, y=0.0, z=-1.0)),
+            model=ModelWrapper.Constant("hunav_plugin", {
+                ModelType.SDF: Model(
+                    type=ModelType.SDF,
+                    name="hunav_plugin",
+                    description=sdf_content,
+                    path="",
+                )
+            })
+        )
 
     @classmethod
     def plugin_entity(cls, namespace: str) -> Obstacle:
@@ -250,6 +250,12 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._arena_pedestrians_container.header.frame_id = "map"
         self._logger.debug("Collections initialized")
 
+        self._obstacle_subscriber = self.node.create_subscription(
+            Agents,
+            '/task_generator_node/hunav_closest_obstacles',
+            self._obstacle_callback,
+            10
+        )
         # Setup services
         self._logger.debug("Setting up services...")
         setup_success = self._setup_services()
@@ -263,7 +269,10 @@ class HunavHumanSimulator(DummyHumanSimulator):
         else:
             self._logger.error("Arena peds publisher setup complete")
 
-        # Wait to be sure that all services are ready
+            # Setup obstacle subscriber
+        if not self._setup_obstacle_subscriber():
+            self._logger.error("Failed to setup obstacle subscriber")
+
         self._logger.debug("Waiting for services to be ready...")
         time.sleep(2.0)
         self._logger.debug("Service wait complete")
@@ -419,6 +428,54 @@ class HunavHumanSimulator(DummyHumanSimulator):
             self._logger.error(f"Arena peds publisher setup failed: {e}")
             return False
 
+    def _setup_obstacle_subscriber(self):
+        """Setup obstacle subscriber for closest_obs from HuNavSystemPlugin"""
+        try:
+            self._logger.info("=== OBSTACLE SUBSCRIBER SETUP START ===")
+            
+            # Create subscriber
+            obstacle_topic = self._namespace('hunav_closest_obstacles')
+            self._obstacle_subscriber = self.node.create_subscription(
+                Agents,
+                obstacle_topic,
+                self._obstacle_callback,
+                10
+            )
+            
+            # Store latest obstacle data
+            self._latest_obstacles = {}
+            
+            self._logger.info(f"Subscribed to {obstacle_topic}")
+            self._logger.info("=== OBSTACLE SUBSCRIBER SETUP COMPLETE ===")
+            return True
+            
+        except Exception as e:
+            self._logger.error(f"Obstacle subscriber setup failed: {e}")
+            return False
+
+    def _obstacle_callback(self, msg):
+        """Store latest obstacle data from HuNavSystemPlugin"""
+        try:
+            self._latest_obstacles.clear()
+            
+            for obs_agent in msg.agents:
+                self._latest_obstacles[obs_agent.name] = obs_agent.closest_obs
+                
+            self._logger.debug(f"Updated obstacle data for {len(self._latest_obstacles)} agents")
+            
+        except Exception as e:
+            self._logger.error(f"Error in obstacle callback: {e}")
+
+    def _update_agent_obstacles(self, current_agents):
+        """Update agent closest_obs with latest obstacle data before HuNav call"""
+        if not self._latest_obstacles:
+            return
+            
+        for agent in current_agents.agents:
+            if agent.name in self._latest_obstacles:
+                agent.closest_obs = self._latest_obstacles[agent.name]
+                self._logger.debug(f"Updated agent {agent.name} with {len(agent.closest_obs)} obstacles")
+
     def _get_agents_callback(self, request, response):
         """Handle get_agents service request - return UNMODIFIED agents"""
         try:
@@ -505,6 +562,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
                     # spawn plugin if not already spawned
                     if not self._gz_plugin_spawned:
                         self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
+                        self._simulator.spawn_entity(_PedestrianHelper.hunav_plugin_entity(self.node.service_namespace()))
                         self._gz_plugin_spawned = True
 
                     # Create SDF with plugin for Gazebo
@@ -545,17 +603,17 @@ class HunavHumanSimulator(DummyHumanSimulator):
             if response:
                 self._logger.debug(f"Successfully registered {len(response.updated_agents.agents)} agents")
 
-                # Update local agents with response data
-                for updated_agent in response.updated_agents.agents:
+                # # Update local agents with response data
+                # for updated_agent in response.updated_agents.agents:
 
-                    for i, agent in enumerate(self._agents_container.agents):
-                        if agent.id == updated_agent.id:
-                            self._agents_container.agents[i] = updated_agent
-                            break
+                #     for i, agent in enumerate(self._agents_container.agents):
+                #         if agent.id == updated_agent.id:
+                #             self._agents_container.agents[i] = updated_agent
+                #             break
 
-                    # Update pedestrians dictionary if exists
-                    if updated_agent.id in self._pedestrians:
-                        self._pedestrians[updated_agent.id]['agent'] = updated_agent
+                #     # Update pedestrians dictionary if exists
+                #     if updated_agent.id in self._pedestrians:
+                #         self._pedestrians[updated_agent.id]['agent'] = updated_agent
 
                 if self._simulator_type != Constants.SimSimulator.GAZEBO:
                     self._logger.debug("Non-Gazebo detected - starting movement timer")
@@ -864,6 +922,9 @@ class HunavHumanSimulator(DummyHumanSimulator):
             # Ensure frame_id is set
             current_agents.header.frame_id = "map"
             current_agents.header.stamp = self.node.get_clock().now().to_msg()
+
+            #Update obstacles BEFORE sending to HuNav
+            self._update_agent_obstacles(current_agents)
 
             # Smooth yaw values before sending to HuNav
             current_agents = self._smooth_agents_before_hunav(current_agents)
