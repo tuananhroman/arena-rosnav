@@ -9,7 +9,7 @@ from geometry_msgs.msg import PoseStamped
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall
+from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall, Floor
 from task_generator.simulators.human.utils import KnownObstacles, ObstacleLayer
 from task_generator.simulators.sim import BaseSim
 from task_generator.utils.registry import Registry
@@ -126,6 +126,14 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._simulator.spawn_walls(list(walls))
         self._spawn_walls_impl(walls)
 
+    def spawn_floors(
+        self,
+        floors: Sequence[Floor]
+    ):
+        self._logger.debug(f'spawning {len(floors)}')
+        self._simulator.spawn_floors(list(floors))
+        self._spawn_floors_impl(floors)
+
     def unuse_obstacles(self):
         """
         Prepares obstacles for reuse or removal.
@@ -218,6 +226,13 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     def _spawn_walls_impl(
         self,
         walls: Sequence[Wall],
+    ) -> bool:
+        ...
+
+    @abc.abstractmethod
+    def _spawn_floors_impl(
+        self,
+        floors: Sequence[Floor],
     ) -> bool:
         ...
 

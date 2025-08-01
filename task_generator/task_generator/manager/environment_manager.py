@@ -126,9 +126,12 @@ class EnvironmentManager(NodeInterface, _Realizer):
         """
 
         walls = list(world.all_walls)
-
+        floors = list(world.all_floors)
         if walls:
             self._human_simulator.spawn_walls(list(map(self._realize_wall, walls)))
+        if floors:
+            self._human_simulator.spawn_floors(list(map(floors)))
+
         self._human_simulator.spawn_obstacles(
             list(map(self._realize_entity, world.all_static_entities)),
             layer=ObstacleLayer.WORLD

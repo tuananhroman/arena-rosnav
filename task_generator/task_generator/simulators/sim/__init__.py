@@ -6,7 +6,7 @@ from arena_rclpy_mixins.shared import Namespace
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import Entity, ModelType, Pose, Wall
+from task_generator.shared import Entity, ModelType, Pose, Wall, Floor
 from task_generator.utils.registry import Registry
 
 
@@ -69,6 +69,11 @@ class BaseSim(NodeInterface):
     def spawn_walls(self, walls: list[Wall]) -> bool:
         """
         Add a list of walls to the simulator.
+        """
+        raise NotImplementedError()
+    def spawn_floors(self,floors: list[Floor]) -> bool:
+        """
+        Add a list of floors to the simulator.
         """
         raise NotImplementedError()
 

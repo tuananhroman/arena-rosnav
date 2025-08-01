@@ -27,6 +27,12 @@ class DummyHumanSimulator(BaseHumanSimulator):
         walls,
     ) -> bool:
         return True
+    
+    def _spawn_floors_impl(
+        self,
+        walls,
+    ) -> bool:
+        return True
 
     def _spawn_robot_impl(
         self,

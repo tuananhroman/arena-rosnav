@@ -176,7 +176,7 @@ class IsaacSimulator(BaseSim):
                         start=start,
                         end=end,
                         height=wall.height,
-                        material='Mahogany'
+                        material='Mahogany',
                     )
                 )
 
@@ -189,6 +189,28 @@ class IsaacSimulator(BaseSim):
         self._logger.info("All walls spawned successfully.")
         self._all_removed = False
         return True
+
+    def spawn_floors(self,floors):
+        self._logger.info(f"Attempting to spawn floors")
+        time.sleep(0.01)
+        for i, floor in enumerate(floors):
+            try:
+                pos = [floor.pos.x,floor.pos.y]
+                future = self.services.spawn_floor.client.call(
+                    SpawnFloor.Request(
+                        name=f"floor_{next(self.floor_counter)}",
+                        x_length = floor.x_length,
+                        y_length = floor.y_length,
+                        pos = pos,
+                        material="Mahogany",
+                    )
+                )
+                
+                self._logger.info(f"Successfully spawned floor {i+1}")
+            
+            except Exception as e:
+                self._logger.error(str(e))
+                raise 
 
     # TODO: update
     def before_reset_task(self):
@@ -337,15 +359,15 @@ class IsaacSimulator(BaseSim):
         self.init_service_clients()
         self.wall_counter = itertools.count()
         self._all_removed: bool = True
-        future = self.services.spawn_floor.client.call(
-                    SpawnFloor.Request(
-                        name=f"wall_{next(self.wall_counter)}",
-                        x_length=15.0,
-                        y_length=15.0,
-                        pos=[0.0,0.0],
-                        material='Mahogany'
-                    )
-                )
+        # future = self.services.spawn_floor.client.call(
+        #             SpawnFloor.Request(
+        #                 name=f"wall_{next(self.wall_counter)}",
+        #                 x_length=15.0,
+        #                 y_length=15.0,
+        #                 pos=[0.0,0.0],
+        #                 material='Mahogany'
+        #             )
+        #         )
         self._logger.info(
             f"Done initializing Isaac Sim")
 
