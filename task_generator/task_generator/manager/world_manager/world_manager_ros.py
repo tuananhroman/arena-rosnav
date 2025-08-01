@@ -4,7 +4,7 @@ import tempfile
 import time
 import typing
 
-import arena_simulation_setup.world
+import arena_simulation_setup.worlds
 import launch
 import launch.actions
 import lifecycle_msgs.msg
@@ -155,7 +155,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
         self._world_name = world_name
 
         tmp_map = self._shift_map(
-            arena_simulation_setup.world.World(world_name).map.path
+            arena_simulation_setup.worlds.World(world_name).map.path
         )
         map_yaml = os.path.join(
             tmp_map.name,
@@ -184,7 +184,7 @@ class WorldManagerROS(MapServerHandler, WorldManager):
 
             self.update_world(
                 world_map=WorldMap.from_costmap(costmap),
-                world_description=arena_simulation_setup.world.World(self.world_name).load()
+                world_description=arena_simulation_setup.worlds.World(self.world_name).load()
             )
 
             self._map_name = self.world_name
