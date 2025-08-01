@@ -4,10 +4,10 @@ from collections.abc import Callable, Collection, Iterator
 from typing import Any
 
 import attrs
+from arena_simulation_setup.worlds.world import WorldDescription
 
 from task_generator import NodeInterface
-from arena_simulation_setup.worlds.world import WorldDescription
-from task_generator.shared import (DynamicObstacle, Entity, Obstacle,
+from task_generator.shared import (Door, DynamicObstacle, Entity, Obstacle,
                                    Orientation, Pose, Position, Robot, Wall)
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
@@ -67,6 +67,15 @@ class _Realizer:
             end=self._realize_position(wall.end),
         )
 
+    @typing.overload
+    def realize(self, target: Door) -> Door: ...
+
+    def _realize_door(self, door: Door) -> Door:
+        return attrs.evolve(
+            door,
+            pose=self._realize_pose(door.pose),
+        )
+
     def realize(
         self,
         target
@@ -85,6 +94,9 @@ class _Realizer:
 
         if isinstance(target, Wall):
             return self._realize_wall(target)
+
+        if isinstance(target, Door):
+            return self._realize_door(target)
 
         raise TypeError(f'realization not implemented for type {type(target)}')
 
@@ -125,10 +137,14 @@ class EnvironmentManager(NodeInterface, _Realizer):
         the map file is retrieved from launch parameter "world"
         """
 
-        walls = list(world.all_walls)
+        walls = world.all_walls
+        doors = world.all_doors
 
-        if walls:
-            self._human_simulator.spawn_walls(list(map(self._realize_wall, walls)))
+        if walls or doors:
+            self._human_simulator.spawn_world(
+                list(map(self._realize_wall, walls)),
+                list(map(self._realize_door, doors))
+            )
         self._human_simulator.spawn_obstacles(
             list(map(self._realize_entity, world.all_static_entities)),
             layer=ObstacleLayer.WORLD

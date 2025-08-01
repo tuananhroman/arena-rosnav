@@ -6,7 +6,7 @@ from arena_rclpy_mixins.shared import Namespace
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import Entity, ModelType, Pose, Wall
+from task_generator.shared import Entity, ModelType, Pose, Wall, Door
 from task_generator.utils.registry import Registry
 
 
@@ -70,13 +70,19 @@ class BaseSim(NodeInterface):
         """
         Add a list of walls to the simulator.
         """
-        raise NotImplementedError()
+        return True
 
-    def remove_walls(self) -> bool:
+    def spawn_doors(self, doors: list[Door]) -> bool:
         """
-        Remove every spawned wall from the simulator.
+        Add a list of doors to the simulator.
         """
-        raise NotImplementedError()
+        return True
+
+    def remove_walls_doors(self) -> bool:
+        """
+        Remove every spawned wall and door from the simulator.
+        """
+        return True
 
 
 SimulatorRegistry = Registry[Constants.SimSimulator, BaseSim]()

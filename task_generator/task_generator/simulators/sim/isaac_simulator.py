@@ -186,6 +186,10 @@ class IsaacSimulator(BaseSim):
         self._all_removed = False
         return True
 
+    def spawn_doors(self, doors):
+        # TODO: implement
+        return True
+
     # TODO: update
     def before_reset_task(self):
         self._delete_all_pedestrians("/pedestrians")
@@ -336,7 +340,7 @@ class IsaacSimulator(BaseSim):
         self._logger.info(
             f"Done initializing Isaac Sim")
 
-    def remove_walls(self):
+    def remove_walls_doors(self):
         self.delete_entity('walls')
         self.delete_entity('obstacles')
         self._all_removed = True
