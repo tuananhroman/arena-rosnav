@@ -9,9 +9,10 @@ from ament_index_python.packages import get_package_share_directory
 from arena_rclpy_mixins.shared import Namespace
 from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
-from hunav_msgs.srv import (ComputeAgent, ComputeAgents, DeleteActors,
+from hunav_msgs.srv import (ComputeAgent, ComputeAgents,
                             GetAgents, GetWalls, MoveAgent, ResetAgents)
 from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_people_msgs.srv import DeleteActors
 
 from task_generator.constants import Constants
 from task_generator.shared import (Model, ModelType, ModelWrapper, Obstacle,
@@ -654,11 +655,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Remove all spawned pedestrians from simulation safely"""
         self._logger.info(f"=== REMOVING {len(self._pedestrians)} PEDESTRIANS ===")
 
-        # Phase 1: Reset HuNav agents FIRST
+        # Phase 1: Delete Actors from ECM first
         success = self._call_delete_actors_service()
 
         if not success:
-            self._logger.error("Failed to delete  HuNav agents from ECM - continuing anyway")
+            self._logger.error("Failed to delete  Pedestrians from ECM - continuing anyway")
             # Don't return False - continue with deletion
 
         # Phase 2: Clear local agents container
@@ -666,7 +667,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._get_agents_container = Agents()
         self._logger.debug("Cleared local agents container")
 
-        # Phase 3: Call plugin to delete actors from ECM
+        # Phase 3: Reset HunavSim 
         success = self._reset_hunav_agents()
         if not success:
             self._logger.error("Failed to reset HuNav agents - continuing anyway")
@@ -716,7 +717,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
             request = DeleteActors.Request()
 
-            self._logger.debug("Calling delete_actors service...")
+            self._logger.error("Calling delete_actors service...")
 
             response = self._delete_actors_client.call(request)
 
@@ -739,6 +740,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # Clear agents container (if not already done)
         self._agents_container.agents.clear()
         self._arena_pedestrians_container.pedestrians.clear()
+
+  
+        self._last_updated_agents = None
+        self._last_smooth_yaws = {}
+        self._agent_previous_orientations = {}
 
         # Stop and cleanup movement timer if running (for non-gazebo simulators)
         if hasattr(self, '_update_timer') and self._update_timer:

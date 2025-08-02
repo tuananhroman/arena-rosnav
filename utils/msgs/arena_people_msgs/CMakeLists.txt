@@ -13,6 +13,10 @@ find_package(builtin_interfaces REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 
+set(srv_files
+  "srv/DeleteActors.srv"
+)
+
 set(msg_files
   "msg/Pedestrian.msg"
   "msg/Pedestrians.msg"
@@ -21,6 +25,7 @@ set(msg_files
 # Generate messages
 rosidl_generate_interfaces(${PROJECT_NAME}
   ${msg_files}
+  ${srv_files}
   DEPENDENCIES builtin_interfaces geometry_msgs std_msgs
 )
 
