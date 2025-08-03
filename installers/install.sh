@@ -211,8 +211,10 @@ if [ ! -f "$INSTALLED" ] ; then
 
 
   ln -fs src/arena/arena-rosnav/tools/source.bash ./arena.bash
+  ln -fs src/arena/arena-rosnav/tools/source.zsh ./arena.zsh
   ln -fs src/arena/arena-rosnav/tools/poetry_install .
   ln -fs src/arena/arena-rosnav/tools/colcon_build .
+  ln -fs src/arena/arena-rosnav/tools/colcon_build.zsh .
 
   . poetry_install
 fi
