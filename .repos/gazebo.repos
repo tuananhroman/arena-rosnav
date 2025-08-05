@@ -17,3 +17,9 @@ repositories:
     type: git
     url: https://github.com/Arena-Rosnav/hunav_gz_plugin
     version: main@94926887
+
+
+  gazebo/arena_human_plugin:
+    type: git
+    url: https://github.com/AhmedMartban/arena_human_plugin
+    version: main@2ebfb744
