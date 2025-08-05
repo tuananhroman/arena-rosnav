@@ -363,45 +363,45 @@ class GazeboSimulator(BaseSim):
         self._logger.info("Goal published")
 
     def spawn_walls(self, walls) -> bool:
-        wall_name = self.node._environment_manager.realize(f"walls_{next(self._wall_counter)}")
-        # wall_positions = [(0, 0), (5, 0), (5, 5), (0, 5), (0, 0)]  # A square wall
-        wall_height = 3.0  # Wall height in meters
-        wall_thickness = 0.2  # Wall thickness in meters
-        base_position = (0, 0, 0)  # Offset the wall to (10, 10, 0)
+        self.remove_walls()  # Clear existing walls
+        for wall in walls:
+            wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
+            # wall_positions = [(0, 0), (5, 0), (5, 5), (0, 5), (0, 0)]  # A square wall
+            wall_height = 3.0  # Wall height in meters
+            wall_thickness = 0.2  # Wall thickness in meters
+            base_position = (0, 0, 0)  # Offset the wall to (10, 10, 0)
 
-        self.remove_walls()
+            self._logger.info(f"Attempting to spawn wall: {wall_name} from {wall.start} to {wall.end}")
 
-        self._logger.info(f"Attempting to spawn walls: {wall_name}")
+            # Generate the SDF string for walls
+            wall_sdf = self._generate_wall_sdf(
+                name=wall_name,
+                walls=[wall],
+                height=wall_height,
+                thickness=wall_thickness,
+                base_position=base_position
+            )
 
-        # Generate the SDF string for walls
-        wall_sdf = self._generate_wall_sdf(
-            name=wall_name,
-            walls=walls,
-            height=wall_height,
-            thickness=wall_thickness,
-            base_position=base_position
-        )
+            if not wall_sdf:
+                self._logger.error(f"Failed to generate SDF for wall: {wall_name}")
+                continue
 
-        if not wall_sdf:
-            self._logger.error(f"Failed to generate SDF for walls: {wall_name}")
-            return False
+            entity = Entity(
+                pose=Pose(),
+                model=ModelWrapper.from_model(
+                    Model(
+                        type=ModelType.SDF,
+                        name=wall_name,
+                        description=wall_sdf,
+                        path='',
+                    )
+                ),
+                name=wall_name,
+                extra={},
+            )
 
-        entity = Entity(
-            pose=Pose(),
-            model=ModelWrapper.from_model(
-                Model(
-                    type=ModelType.SDF,
-                    name=wall_name,
-                    description=wall_sdf,
-                    path='',
-                )
-            ),
-            name=wall_name,
-            extra={},
-        )
-
-        self.spawn_entity(entity)
-        self._walls_entities.append(wall_name)
+            self.spawn_entity(entity)
+            self._walls_entities.append(wall_name)
 
         return True
 
@@ -409,6 +409,7 @@ class GazeboSimulator(BaseSim):
         for entity in self._walls_entities:
             self.delete_entity(entity)
         self._walls_entities = []
+        self._wall_counter = itertools.count()
         return True
 
     def _generate_wall_sdf(
@@ -459,7 +460,7 @@ class GazeboSimulator(BaseSim):
             z = height / 2.0  # Center the wall height relative to the base
 
             for i, w in enumerate(walls):
-                x1, y1, x2, y2 = w.Start.x, w.Start.y, w.End.x, w.End.y
+                x1, y1, x2, y2 = w.start.x, w.start.y, w.end.x, w.end.y
                 length = ((x2 - x1) ** 2 + (y2 - y1) ** 2) ** 0.5
                 orientation = math.atan2(y2 - y1, x2 - x1)
                 x = (x1 + x2) / 2 + base_x

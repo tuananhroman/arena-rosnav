@@ -1,18 +1,16 @@
 import itertools
+from collections.abc import Collection
 from math import floor
 from typing import Optional
-from collections.abc import Collection
 
 import numpy as np
 import scipy.signal
+from arena_simulation_setup.shared import Position, PositionRadius, Wall
+from arena_simulation_setup.worlds.world import WorldDescription
 
 from task_generator import NodeInterface
-from task_generator.shared import Position, PositionRadius
 
-from .utils import (World, WorldEntities, WorldMap,
-                    WorldObstacleConfigurations, WorldOccupancy, WorldWalls,
-                    WorldZones, configurations_to_obstacles,
-                    occupancy_to_walls)
+from .utils import WorldMap, WorldOccupancy, occupancy_to_walls
 
 
 class WorldManager(NodeInterface):
@@ -22,7 +20,8 @@ class WorldManager(NodeInterface):
     obstacle positions.
     """
 
-    _world: World
+    _world: WorldDescription
+    _map: WorldMap
     _classic_forbidden_zones: list[PositionRadius]
 
     def __init__(
@@ -33,76 +32,64 @@ class WorldManager(NodeInterface):
         self._classic_forbidden_zones = []
 
     @property
-    def world(self) -> World:
+    def world(self) -> WorldDescription:
         return self._world
 
     @property
+    def map(self) -> WorldMap:
+        return self._map
+
+    @property
     def _shape(self) -> tuple[int, int]:
-        return self._world.map.shape[0], self._world.map.shape[1]
+        return self._map.shape[0], self._map.shape[1]
 
     @property
     def origin(self) -> Position:
-        return self._world.map.origin
+        return self._map.origin
 
     @property
     def resolution(self) -> float:
-        return self._world.map.resolution
+        return self._map.resolution
+
+    _detected_walls: Optional[Collection[Wall]] = None
 
     @property
-    def walls(self) -> WorldWalls:
-        return self._world.entities.walls
-
-    _detected_walls: Optional[WorldWalls]
-
-    @property
-    def detected_walls(self) -> WorldWalls:
+    def detected_walls(self) -> Collection[Wall]:
         if self._detected_walls is None:
             self._detected_walls = occupancy_to_walls(
-                occupancy_grid=self._world.map.occupancy._walls.grid,
-                transform=self._world.map.tf_grid2pos
+                occupancy_grid=self.map.occupancy._walls.grid,
+                transform=self.map.tf_grid2pos
             )
         return self._detected_walls
-
-    @property
-    def zones(self) -> WorldZones:
-        return self.world.zones
 
     def update_world(
         self,
         world_map: WorldMap,
-        obstacles: Optional[WorldObstacleConfigurations] = None,
-        walls: Optional[WorldWalls] = None,
-        zones: Optional[WorldZones] = None,
+        world_description: WorldDescription,
     ):
         self._detected_walls = None
+        self._map = world_map
 
-        if obstacles is None:
-            obstacles = []
+        if not list(world_description.all_walls):
+            world_description.zones.append(
+                WorldDescription.Zone(
+                    name='detected_walls',
+                    corners=[],
+                    walls=list(self.detected_walls),
+                )
+            )
 
-        if walls is None:
-            walls = []
+        counter = itertools.count(0)
+        for entity in itertools.chain(world_description.all_static_entities, world_description.all_dynamic_entities):
+            if not entity.name:
+                entity.name = f'{next(counter)}_{entity.model.name}'
+            entity.name = f'world_{entity.name}'
 
-        if zones is None:
-            zones = []
+        self._world = world_description
 
-        parsed_obstacles = configurations_to_obstacles(
-            configurations=obstacles
-        )
-
-        entities = WorldEntities(
-            obstacles=parsed_obstacles,
-            walls=walls
-        )
-
-        self._world = World(
-            entities=entities,
-            map=world_map,
-            zones=zones,
-        )
-
-        for obstacle in self.world.entities.obstacles:
-            self.world.map.occupancy.obstacle_occupy(
-                *self.world.map.tf_posr2rect(
+        for obstacle in self.world.all_static_entities:
+            self.map.occupancy.obstacle_occupy(
+                *self.map.tf_posr2rect(
                     PositionRadius(
                         x=obstacle.pose.position.x,
                         y=obstacle.pose.position.y,
@@ -113,11 +100,11 @@ class WorldManager(NodeInterface):
 
     def forbid(self, forbidden_zones: list[PositionRadius]):
         for zone in forbidden_zones:
-            self.world.map.occupancy.forbidden_occupy(
-                *self.world.map.tf_posr2rect(zone))
+            self.map.occupancy.forbidden_occupy(
+                *self.map.tf_posr2rect(zone))
 
     def forbid_clear(self):
-        self._world.map.occupancy.forbidden_clear()
+        self._map.occupancy.forbidden_clear()
 
     def _classic_get_random_pos_on_map(self, safe_dist: float, forbid: bool = True,
                                        forbidden_zones: Optional[list[PositionRadius]] = None) -> Position:
@@ -164,20 +151,20 @@ class WorldManager(NodeInterface):
             return True
 
         safe_dist_in_cells = math.ceil(
-            safe_dist / self.world.map.resolution) + 1
+            safe_dist / self.map.resolution) + 1
 
         forbidden_zones_in_cells: list[PositionRadius] = [
             PositionRadius(
-                x=math.ceil(point.x / self.world.map.resolution),
-                y=math.ceil(point.y / self.world.map.resolution),
-                radius=math.ceil(point.radius / self.world.map.resolution),
+                x=math.ceil(point.x / self.map.resolution),
+                y=math.ceil(point.y / self.map.resolution),
+                radius=math.ceil(point.radius / self.map.resolution),
             )
             for point in self._classic_forbidden_zones + (forbidden_zones if forbidden_zones is not None else [])
         ]
 
         # Now get index of all cells were dist is > safe_dist_in_cells
         possible_cells: list[tuple[np.intp, np.intp]] = np.array(
-            np.where(self.world.map.occupancy.grid > safe_dist_in_cells)).transpose().tolist()
+            np.where(self.map.occupancy.grid > safe_dist_in_cells)).transpose().tolist()
 
         # return (random.randint(1,6), random.randint(1, 9), 0)
         assert len(possible_cells) > 0, "No cells available"
@@ -204,8 +191,8 @@ class WorldManager(NodeInterface):
             raise RuntimeError("can't find any non-occupied spaces")
 
         point = PositionRadius(
-            x=np.round(float(x) * self.world.map.resolution + self.world.map.origin.x, 3),
-            y=np.round(float(y) * self.world.map.resolution + self.world.map.origin.y, 3),
+            x=np.round(float(x) * self.map.resolution + self.map.origin.x, 3),
+            y=np.round(float(y) * self.map.resolution + self.map.origin.y, 3),
             radius=safe_dist,
         )
 
@@ -246,7 +233,7 @@ class WorldManager(NodeInterface):
         if forbidden_zones is None:
             forbidden_zones = []
 
-        fork = self._world.map.occupancy.fork()
+        fork = self._map.occupancy.fork()
 
         points: list[Position] = []
 
@@ -255,7 +242,7 @@ class WorldManager(NodeInterface):
                 pos = self._classic_get_random_pos_on_map(
                     safe_dist=safe_dist, forbidden_zones=forbidden_zones)
                 posr = PositionRadius(x=pos.x, y=pos.y, radius=safe_dist)
-                fork.occupy(*self.world.map.tf_posr2rect(posr))
+                fork.occupy(*self.map.tf_posr2rect(posr))
                 forbidden_zones.append(posr)
                 points.append(pos)
 
@@ -266,7 +253,7 @@ class WorldManager(NodeInterface):
 
             for zone in forbidden_zones:
                 fork.occupy(
-                    *self.world.map.tf_posr2rect(
+                    *self.map.tf_posr2rect(
                         PositionRadius(
                             x=zone.x,
                             y=zone.y,
@@ -314,7 +301,7 @@ class WorldManager(NodeInterface):
                                 (candidate + min_dist)
                             )
 
-                            result.append(self._world.map.tf_grid2pos(
+                            result.append(self._map.tf_grid2pos(
                                 (candidate[0], candidate[1])))
 
                         to_produce = target - len(result)
@@ -329,7 +316,7 @@ class WorldManager(NodeInterface):
 
                 except RuntimeError:
                     result += [
-                        self._world.map.tf_grid2pos(
+                        self._map.tf_grid2pos(
                             (
                                 (-1 - floor(i / 5)) * int(self._shape[1] / 5),
                                 int((i % 5) * self._shape[0] / 5)
