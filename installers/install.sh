@@ -191,7 +191,7 @@ if [ ! -f src/ros2/compiled ] ; then
     git -c user.name='Arena' -c user.email='anonymous@arena-rosnav.org' cherry-pick 654d6f5658b59009147b9fad9b724919633f38fe || echo 'already cherry picked'
   popd
 
-  . src/arena/arena-rosnav/tools/colcon_build --paths src/ros2/*
+  PATHS=src/ros2 . src/arena/arena-rosnav/tools/colcon_build
   touch src/ros2/compiled
   
   # don't even ask
@@ -235,11 +235,12 @@ fi
 # run installers
 # sudo apt upgrade
 
+BUILD_ALL=1 . colcon_build
+
 compile(){
   cd "${ARENA_WS_DIR}"
-  . colcon_build #TODO get rid of this
   ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO} ros2 run arena_bringup pull
-  . colcon_build
+  BUILD_ALL=1 . colcon_build
 }
 
 compile
@@ -260,8 +261,9 @@ do
     choice="${choice:-N}"
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         . "src/arena/arena-rosnav/installers/$installer"
-        compile
         echo "$name" >> "$INSTALLED"
+        ros2 run arena_bringup pull
+        . colcon_build
     else
         echo "Skipping ${name} installation."
     fi

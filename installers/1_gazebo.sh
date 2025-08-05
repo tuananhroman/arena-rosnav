@@ -69,6 +69,6 @@ if [ ! -d src/tools/gz-usd ]; then
   pushd src/tools
     git clone -b main https://github.com/gazebosim/gz-usd
   popd
-
+  PATHS=src/tools/gz-usd . colcon_build
   echo "Successfully installed gz-usd"
 fi
