@@ -73,7 +73,8 @@ class _Realizer:
     def _realize_door(self, door: Door) -> Door:
         return attrs.evolve(
             door,
-            pose=self._realize_pose(door.pose),
+            start=self._realize_position(door.start),
+            end=self._realize_position(door.end),
         )
 
     def realize(
@@ -140,14 +141,18 @@ class EnvironmentManager(NodeInterface, _Realizer):
         walls = world.all_walls
         doors = world.all_doors
 
+        realized_doors = list(map(self._realize_door, doors))
+        if realized_doors:
+            self._simulator.spawn_doors(realized_doors)
+
         if walls or doors:
             self._human_simulator.spawn_world(
                 list(map(self._realize_wall, walls)),
-                list(map(self._realize_door, doors))
+                realized_doors,
             )
         self._human_simulator.spawn_obstacles(
             list(map(self._realize_entity, world.all_static_entities)),
-            layer=ObstacleLayer.WORLD
+            layer=ObstacleLayer.WORLD,
         )
 
     def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
