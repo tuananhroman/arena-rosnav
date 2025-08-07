@@ -9,7 +9,7 @@ from geometry_msgs.msg import PoseStamped
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall
+from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall, Floor
 from task_generator.simulators.human.utils import KnownObstacles, ObstacleLayer
 from task_generator.simulators.sim import BaseSim
 from task_generator.utils.registry import Registry
