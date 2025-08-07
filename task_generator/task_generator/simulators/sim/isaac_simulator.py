@@ -190,16 +190,14 @@ class IsaacSimulator(BaseSim):
         return True
 
     def spawn_doors(self, doors):
-        self._logger.info(f"Attempting to spawn doors")
-
         for door in doors:
             self.services.spawn_door.client.call(
                 SpawnDoor.Request(
-                    start=[door.start.x, door.start.y],
-                    end=[door.end.x, door.end.y],
-                    height=2.5,
                     name=door.name,
-                    material="Wood_Grain",
+                    start=door.start.to_list(),
+                    end=door.end.to_list(),
+                    height=door.height,
+                    material=door.material,
                     kind=door.kind,
                 )
             )
