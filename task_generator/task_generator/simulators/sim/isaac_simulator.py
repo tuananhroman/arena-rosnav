@@ -17,6 +17,7 @@ from isaacsim_msgs.srv import (
     MovePrim,
     Pedestrian,
     SpawnWall,
+    SpawnDoor,
     UrdfToUsd,
     MovePed,
 )
@@ -52,6 +53,7 @@ class _Services(typing.NamedTuple):
     move_prim: _Service
     delete_prim: _Service
     spawn_wall: _Service
+    spawn_door: _Service
     import_pedestrians: _Service
     move_pedestrians: _Service
     delete_all_pedestrians: _Service
@@ -75,6 +77,7 @@ class IsaacSimulator(BaseSim):
             ),
             move_prim=_Service(type_=MovePrim, name="isaac/move_prim"),
             spawn_wall=_Service(type_=SpawnWall, name="isaac/spawn_wall"),
+            spawn_door=_Service(type_=SpawnDoor, name="isaac/spawn_door"),
             import_obstacle=_Service(
                 type_=ImportObstacles, name="isaac/import_obstacle"
             ),
@@ -187,7 +190,21 @@ class IsaacSimulator(BaseSim):
         return True
 
     def spawn_doors(self, doors):
-        # TODO: implement
+        self._logger.info(f"Attempting to spawn doors")
+
+        for door in doors:
+            self.services.spawn_door.client.call(
+                SpawnDoor.Request(
+                    start=[door.start.x, door.start.y],
+                    end=[door.end.x, door.end.y],
+                    height=2.5,
+                    name=door.name,
+                    material="Wood_Grain",
+                    kind=door.kind,
+                )
+            )
+        self._logger.info("All doors spawned successfully.")
+        self._all_removed = False
         return True
 
     # TODO: update
