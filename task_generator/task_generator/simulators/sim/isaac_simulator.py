@@ -321,6 +321,13 @@ class IsaacSimulator(BaseSim):
                     cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel')
                 )
             )
+
+            from isaac_utils.managers.door_manager import door_manager
+            base_frame = getattr(robot_params, 'base_frame', 'base_link')
+            robot_prim_path = f"/World/{robot.name}/{base_frame}"
+            door_manager.add_robot(robot_prim_path)
+            print(f"DEBUG: Registered robot prim for door checks: {robot_prim_path}")
+            
             return True
 
         # TODO
