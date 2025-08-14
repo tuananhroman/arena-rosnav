@@ -124,8 +124,10 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         Adds walls and doors to the simulator.
         """
         self._logger.debug(f'spawning {len(walls)} walls and {len(doors)} doors')
-        self._simulator.spawn_walls(list(walls))
+        # Ensure doors are spawned first so wall-spawn logic can split walls
+        # and create gaps where doors are present.
         self._simulator.spawn_doors(list(doors))
+        self._simulator.spawn_walls(list(walls))
         self._spawn_walls_impl(walls)
         self._spawn_doors_impl(doors)
 

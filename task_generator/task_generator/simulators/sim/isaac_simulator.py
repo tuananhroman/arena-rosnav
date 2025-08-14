@@ -2,6 +2,8 @@ import os
 import time
 import typing
 import random
+import numpy as np
+import math
 
 import arena_simulation_setup.entities.robot
 import attrs
@@ -176,19 +178,93 @@ class IsaacSimulator(BaseSim):
         time.sleep(0.01)
         for i, wall in enumerate(walls):
             try:
-                # print(f"wall {i+1}: {wall}")
-                start = [wall.start.x, wall.start.y]
-                end = [wall.end.x, wall.end.y]
-                future = self.services.spawn_wall.client.call(
-                    SpawnWall.Request(
-                        name=f"wall_{next(self.wall_counter)}",
-                        start=start,
-                        end=end,
-                        height=wall.height
-                    )
-                )
+                # Split wall by any doors previously spawned on this simulator
+                start = np.array([wall.start.x, wall.start.y], dtype=float)
+                end = np.array([wall.end.x, wall.end.y], dtype=float)
+                height = getattr(wall, 'height', 2.0)
 
-                self._logger.info(f"Successfully spawned wall {i+1}")
+                # collect cut parameters t in [0,1]
+                cuts = [0.0, 1.0]
+                spawned_doors = getattr(self, '_spawned_doors', []) or []
+
+                # compute door ranges (t_min, t_max) along this wall for skipping
+                door_ranges: list[tuple[float, float]] = []
+
+                for door in spawned_doors:
+                    try:
+                        dstart = np.array([door.start.x, door.start.y], dtype=float)
+                        dend = np.array([door.end.x, door.end.y], dtype=float)
+                    except Exception:
+                        # door may be a simple mapping; try dict-like
+                        try:
+                            dstart = np.array(door['start'][:2], dtype=float)
+                            dend = np.array(door['end'][:2], dtype=float)
+                        except Exception:
+                            continue
+
+                    def _project_param(a, b, p):
+                        ab = b - a
+                        denom = np.dot(ab, ab)
+                        if denom <= 1e-8:
+                            return 0.0
+                        t = float(np.dot(p - a, ab) / denom)
+                        return max(0.0, min(1.0, t))
+
+                    t0 = _project_param(start, end, dstart)
+                    t1 = _project_param(start, end, dend)
+
+                    tmin, tmax = min(t0, t1), max(t0, t1)
+                    # only consider door if it overlaps the wall at all
+                    if tmax <= 0.0 or tmin >= 1.0:
+                        continue
+                    door_ranges.append((tmin, tmax))
+                    cuts.extend([tmin, tmax])
+
+                # sanitize and sort cuts
+                cuts = sorted(set([max(0.0, min(1.0, float(c))) for c in cuts]))
+
+                # debug log door ranges
+                if door_ranges:
+                    self._logger.debug(f"Wall {i}: door_ranges={door_ranges}, cuts={cuts}")
+
+                # spawn segments between successive unique cut points, skipping door intervals
+                total_len = np.linalg.norm(end - start)
+                EPS = 1e-3
+                DOOR_EPS = 1e-3
+                seg_i = 0
+                spawned_segs = 0
+                for a_t, b_t in zip(cuts[:-1], cuts[1:]):
+                    seg_len = (b_t - a_t) * total_len
+                    if seg_len < EPS:
+                        self._logger.debug(f"Wall {i}: skipping tiny segment [{a_t:.4f},{b_t:.4f}] len={seg_len}")
+                        continue
+
+                    # if this interval overlaps any door range, skip it
+                    overlaps_door = False
+                    for dr_min, dr_max in door_ranges:
+                        if not (b_t <= dr_min + DOOR_EPS or a_t >= dr_max - DOOR_EPS):
+                            overlaps_door = True
+                            break
+
+                    if overlaps_door:
+                        self._logger.debug(f"Wall {i}: skipping segment [{a_t:.4f},{b_t:.4f}] because it overlaps a door range")
+                        continue
+
+                    seg_start = start + (end - start) * a_t
+                    seg_end = start + (end - start) * b_t
+
+                    future = self.services.spawn_wall.client.call(
+                        SpawnWall.Request(
+                            name=f"wall_{next(self.wall_counter)}_seg{seg_i}",
+                            start=[float(seg_start[0]), float(seg_start[1])],
+                            end=[float(seg_end[0]), float(seg_end[1])],
+                            height=height,
+                        )
+                    )
+                    seg_i += 1
+                    spawned_segs += 1
+
+                self._logger.info(f"Successfully spawned wall {i+1} as {spawned_segs} segment(s)")
 
             except Exception as e:
                 self._logger.error(str(e))
@@ -199,6 +275,12 @@ class IsaacSimulator(BaseSim):
         return True
 
     def spawn_doors(self, doors):
+        # cache doors so spawn_walls can split using door locations
+        try:
+            self._spawned_doors = doors
+        except Exception:
+            self._spawned_doors = list(doors)
+
         for door in doors:
             self.services.spawn_door.client.call(
                 SpawnDoor.Request(
