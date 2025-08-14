@@ -25,6 +25,7 @@ from isaacsim_msgs.msg import Person, NavPed
 from task_generator.shared import DynamicObstacle, ModelType, Obstacle, Robot
 from task_generator.simulators.sim import BaseSim
 import itertools
+from std_msgs.msg import String as StdString
 
 
 @attrs.define()
@@ -109,6 +110,14 @@ class IsaacSimulator(BaseSim):
             self._logger.info(f'Service "{service.name}" is now available.')
 
         self.ped_dict = {}
+        # Publisher for external registration messages so IsaacSim's DoorManager
+        # can be informed about spawned entities in the IsaacSim process.
+        try:
+            self._reg_pub = self.node.create_publisher(StdString, '/isaac/register_entity', 10)
+            self._logger.info('Created /isaac/register_entity publisher')
+        except Exception as e:
+            self._reg_pub = None
+            self._logger.warning(f'Failed to create registration publisher: {e}')
         self._logger.info("All service clients initialized and available.")
 
     def spawn_entity(self, entity):
@@ -325,9 +334,18 @@ class IsaacSimulator(BaseSim):
             from isaac_utils.managers.door_manager import door_manager
             base_frame = getattr(robot_params, 'base_frame', 'base_link')
             robot_prim_path = f"/World/{robot.name}/{base_frame}"
-            door_manager.add_robot(robot_prim_path)
-            print(f"DEBUG: Registered robot prim for door checks: {robot_prim_path}")
-            
+
+            # Publish registration message so DoorManager in IsaacSim process
+            # registers the robot. This avoids cross-process direct calls.
+            try:
+                if getattr(self, '_reg_pub', None) is not None:
+                    self._reg_pub.publish(StdString(data=f"robot|{robot_prim_path}"))
+                    self._logger.debug(f"Published registration for robot: {robot_prim_path}")
+                else:
+                    self._logger.warning('Registration publisher not available; robot not registered with IsaacSim DoorManager')
+            except Exception as e:
+                self._logger.warning(f'Failed to publish robot registration: {e}')
+
             return True
 
         # TODO
