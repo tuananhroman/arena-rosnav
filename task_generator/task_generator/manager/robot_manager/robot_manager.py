@@ -14,7 +14,7 @@ import rclpy.client
 import rclpy.publisher
 import rclpy.timer
 from arena_rclpy_mixins.shared import Namespace
-from nav2_msgs.srv import ClearCostmapAroundRobot
+from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
 
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import task_generator.utils.arena as Utils
@@ -45,7 +45,7 @@ class RobotManager(NodeInterface):
     _move_base_pub: rclpy.publisher.Publisher
     _goal_pub: rclpy.publisher.Publisher
     _pub_goal_timer: rclpy.timer.Timer
-    _clear_costmaps_srv: rclpy.client.Client
+    _clear_costmap_around_robot_srv: rclpy.client.Client
     _is_goal_reached: bool
     _rate_setup: rclpy.timer.Rate
     _config: arena_simulation_setup.entities.robot.Robot
@@ -192,36 +192,47 @@ class RobotManager(NodeInterface):
     def move_robot_to_pos(self, pose: Pose):
         pose.position.z += self._config.model_params.z_offset
         self._entity_manager.move_robot(name=self.name, pose=pose)
-        self.clearCostmapAroundRobot(5.0)
+        import time
+        time.sleep(0.001)  # wait for the robot to move
+        self._clear_local_costmap(-1)
 
-    def clearCostmapAroundRobot(self, reset_distance: float) -> bool:
-        """Clear the costmap around the robot."""
+    def _clear_local_costmap(self, reset_distance: float = -1) -> bool:
+        """
+        Clear the local costmap around the robot.
+        If reset_distance is -1, the entire costmap will be cleared.
+        If reset_distance is >= 0, only the costmap around the robot will be cleared.
+        """
+        node_name = self.node.service_namespace(self.name, 'local_costmap/local_costmap')
 
-        state = self.node.get_lifecycle_state(
-            node_name := self.node.service_namespace(self.name, 'local_costmap/local_costmap'),
-        )
+        if reset_distance < 0:
+            srv_name = os.path.abspath(node_name('../clear_entirely_local_costmap'))
+            srv_type = ClearEntireCostmap
+            req = ClearEntireCostmap.Request()
+        else:
+            srv_name = os.path.abspath(node_name('../clear_around_local_costmap'))
+            srv_type = ClearCostmapAroundRobot
+            req = ClearCostmapAroundRobot.Request()
+            req.reset_distance = reset_distance
+
+        state = self.node.get_lifecycle_state(node_name)
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
-        service_name = os.path.abspath(node_name('../clear_around_local_costmap'))
-
-        self._logger.info(f"Service name: {service_name}")
-        self._clear_costmaps_srv = self.node.create_client(
-            ClearCostmapAroundRobot,
-            service_name,
+        self._logger.info(f"Service name: {srv_name}")
+        srv = self.node.create_client(
+            srv_type,
+            srv_name,
         )
-        while not self._clear_costmaps_srv.wait_for_service(timeout_sec=1.0):
-            self._logger.warn(f'{service_name} service not available, waiting...')
-        req = ClearCostmapAroundRobot.Request()
-        req.reset_distance = reset_distance
+        while not srv.wait_for_service(timeout_sec=1.0):
+            self._logger.warn(f'{srv_name} service not available, waiting...')
 
-        result = self._clear_costmaps_srv.call(req)
+        result = srv.call(req)
         if result is None:
             self._logger.error(
-                f"service call failed for {service_name}")
+                f"service call failed for {srv_name}")
             return False
         self._logger.info(
-            f"successfull service call for {service_name}"
+            f"successfull service call for {srv_name}"
         )
         return True
 

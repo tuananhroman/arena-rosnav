@@ -22,11 +22,13 @@ from isaacsim_msgs.srv import (
     SpawnDoor,
     UrdfToUsd,
     MovePed,
+    SpawnFloor
 )
 from isaacsim_msgs.msg import Person, NavPed
 from task_generator.shared import DynamicObstacle, ModelType, Obstacle, Robot
 from task_generator.simulators.sim import BaseSim
 import itertools
+import numpy as np
 from std_msgs.msg import String as StdString
 
 
@@ -56,6 +58,7 @@ class _Services(typing.NamedTuple):
     move_prim: _Service
     delete_prim: _Service
     spawn_wall: _Service
+    spawn_floor: _Service
     spawn_door: _Service
     import_pedestrians: _Service
     move_pedestrians: _Service
@@ -80,6 +83,7 @@ class IsaacSimulator(BaseSim):
             ),
             move_prim=_Service(type_=MovePrim, name="isaac/move_prim"),
             spawn_wall=_Service(type_=SpawnWall, name="isaac/spawn_wall"),
+            spawn_floor=_Service(type_=SpawnFloor, name='isaac/spawn_floor'),
             spawn_door=_Service(type_=SpawnDoor, name="isaac/spawn_door"),
             import_obstacle=_Service(
                 type_=ImportObstacles, name="isaac/import_obstacle"
@@ -274,6 +278,29 @@ class IsaacSimulator(BaseSim):
         self._all_removed = False
         return True
 
+    def spawn_floors(self, floors):
+        self._logger.info(f"Attempting to spawn floors")
+        time.sleep(0.01)
+        for floor in floors:
+            try:
+                pos = [floor.pos.x, floor.pos.y]
+                i = next(self.floor_counter)
+                future = self.services.spawn_floor.client.call(
+                    SpawnFloor.Request(
+                        name=f"floor_{i}",
+                        x_length=floor.x_length,
+                        y_length=floor.y_length,
+                        pos=pos,
+                        material=floor.mat,
+                    )
+                )
+
+                self._logger.info(f"Successfully spawned floor {i}")
+
+            except Exception as e:
+                self._logger.error(str(e))
+                return False
+
     def spawn_doors(self, doors):
         # cache doors so spawn_walls can split using door locations
         try:
@@ -458,7 +485,17 @@ class IsaacSimulator(BaseSim):
 
         self.init_service_clients()
         self.wall_counter = itertools.count()
+        self.floor_counter = itertools.count()
         self._all_removed: bool = True
+        # future = self.services.spawn_floor.client.call(
+        #             SpawnFloor.Request(
+        #                 name=f"wall_{next(self.wall_counter)}",
+        #                 x_length=15.0,
+        #                 y_length=15.0,
+        #                 pos=[0.0,0.0],
+        #                 material='Mahogany'
+        #             )
+        #         )
         self._logger.info(
             f"Done initializing Isaac Sim")
 
