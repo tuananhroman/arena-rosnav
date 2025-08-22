@@ -1,0 +1,51 @@
+#! /usr/bin/env zsh
+
+source "${ARENA_WS_DIR:-.}/src/arena/arena-rosnav/tools/source.zsh" || return $?
+
+# Detect if skipping old packages
+if [[ "$*" == *"--packages-"* ]]; then
+    _SKIP_OLD=${SKIP_OLD:-0}
+else
+    _SKIP_OLD=${SKIP_OLD:-1}
+fi
+
+BUILD_BASE='build'
+INSTALL_BASE='install'
+BASE_PATHS=(
+    "${ARENA_WS_DIR}/src"
+)
+
+OLD_PACKAGES=()
+
+if [[ "${_SKIP_OLD}" == 1 ]]; then
+    recursive_mtime() {
+        find "$1" ! -type l -printf "%T@\n" | sort | tail -1 | cut -d. -f1
+    }
+
+    while read -r target; do
+        package=$(echo "$target" | cut -f1)
+        src_path=$(echo "$target" | cut -f2)
+
+        if [[ -n "${package}" ]] && \
+           [[ -d "${INSTALL_BASE}/${package}" ]] && \
+           [[ "$(recursive_mtime "${INSTALL_BASE}/${package}")" -ge "$(recursive_mtime "${src_path}")" ]]; then
+            OLD_PACKAGES+=("$package")
+        fi
+    done < <(colcon list --base-paths "${BASE_PATHS[@]}")
+fi
+unset _SKIP_OLD
+
+ARGS=(
+    "--build-base" "${BUILD_BASE}"
+    "--install-base" "${INSTALL_BASE}"
+    "--base-paths" "${BASE_PATHS[@]}"
+    "--symlink-install"
+    "--continue-on-error"
+    "--packages-skip" "${OLD_PACKAGES[@]}" qt_gui_core rqt qt_gui_cpp rqt_gui_cpp
+    "--cmake-args" "-DPython3_ROOT_DIR=$(cd "${ARENA_WS_DIR}/src/arena/arena-rosnav" && poetry env info -p) -DBUILD_TESTING=OFF"
+)
+
+colcon build "${ARGS[@]}" "$@"
+
+# Source the Zsh-native arena environment again
+source "${ARENA_WS_DIR}/src/arena/arena-rosnav/tools/source.zsh"
