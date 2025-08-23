@@ -171,6 +171,15 @@ namespace task_generator_gui
 
                     selected_scenario_config_file = config_file;
                 }
+                if (hasNestedParameter("task.prompt.user_prompt"))
+                {
+                    if (init)
+                        obstacles_task_mode = QString("Prompt");
+
+                    auto prompt = parameters_client->get_parameter<std::string>("task.prompt.user_prompt");
+
+                    typed_prompt = prompt;
+                }
             }
 
             if (parameters_client->has_parameter("tm_robots"))
@@ -465,6 +474,21 @@ namespace task_generator_gui
             parameter.name = "task.scenario.file";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
             parameter.value.string_value = selected_scenario_config_file;
+            request->parameters.push_back(parameter);
+        }
+        else if (obstacles_task_mode == "Prompt")
+        {
+            rcl_interfaces::msg::Parameter parameter;
+            parameter.name = "tm_obstacles";
+            parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
+            parameter.value.string_value = "prompt";
+            request->parameters.push_back(parameter);
+
+            parameter = rcl_interfaces::msg::Parameter();
+            parameter.name = "task.prompt.user_prompt";
+            parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
+            parameter.value.string_value = typed_prompt;
+            RCLCPP_INFO(service_node->get_logger(), "parameter.value.string_value %s", parameter.value.string_value.c_str());
             request->parameters.push_back(parameter);
         }
     }

@@ -183,6 +183,11 @@ def declare_obstacles():
         from .obstacles.environment import TM_Environment
         return TM_Environment
 
+    @TaskFactory.register_obstacles(Constants.TaskMode.TM_Obstacles.PROMPT)
+    def _prompt():
+        from .obstacles.prompt import TM_Prompt
+        return TM_Prompt
+
 
 def declare_robots():
     @TaskFactory.register_robots(Constants.TaskMode.TM_Robots.EXPLORE)
