@@ -555,8 +555,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 if self._simulator_type == Constants.SimSimulator.GAZEBO:
                     # spawn plugin if not already spawned
                     if not self._gz_plugin_spawned:
-                        self._simulator.spawn_entity(_PedestrianHelper.plugin_entity(self.node.service_namespace()))
-                        self._simulator.spawn_entity(_PedestrianHelper.hunav_plugin_entity(self.node.service_namespace()))
+                        self._simulator.obstacle_spawn((_PedestrianHelper.plugin_entity(self.node.service_namespace()),))
+                        self._simulator.obstacle_spawn((_PedestrianHelper.hunav_plugin_entity(self.node.service_namespace()),))
                         self._gz_plugin_spawned = True
 
                     # Create SDF with plugin for Gazebo

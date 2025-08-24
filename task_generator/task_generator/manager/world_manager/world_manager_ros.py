@@ -194,6 +194,9 @@ class WorldManagerROS(MapServerHandler, WorldManager):
                     callback()
                 except Exception as e:
                     self._logger.warning(f'encountered exception in world callback: {repr(e)}')
+                    import traceback
+                    import sys
+                    traceback.print_exc(file=sys.stdout)
 
     def _setup_world_callbacks(self):
 

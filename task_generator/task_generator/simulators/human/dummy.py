@@ -36,19 +36,18 @@ class DummyHumanSimulator(BaseHumanSimulator):
 
     def _spawn_robot_impl(
         self,
-        robot,
-    ) -> bool:
-        return True
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)
 
     def _remove_robot_impl(
         self,
-        name,
-    ) -> bool:
-        return True
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)
 
     def _move_robot_impl(
         self,
-        name,
-        pose,
-    ) -> bool:
-        return True
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)

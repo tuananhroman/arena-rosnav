@@ -23,7 +23,7 @@
 		{
 			"name": "planners",
 			"path": "src/planners"
-		},
+		}
 	],
 	"settings": {
 		"files.associations": {

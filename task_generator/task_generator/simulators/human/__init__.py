@@ -9,7 +9,8 @@ from geometry_msgs.msg import PoseStamped
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot, Wall, Floor, Door
+from task_generator.shared import (Door, DynamicObstacle, Floor, Obstacle,
+                                   Pose, Robot, Wall)
 from task_generator.simulators.human.utils import KnownObstacles, ObstacleLayer
 from task_generator.simulators.sim import BaseSim
 from task_generator.utils.registry import Registry
@@ -61,7 +62,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         for obstacle in obstacles:
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
                 known.obstacle = obstacle
-                self._simulator.move_entity(known.obstacle.name, known.obstacle.pose)
+                self._simulator.obstacle_move(known.obstacle.name, known.obstacle.pose)
                 known.layer = layer
             else:
                 known = self._known_obstacles.create_or_get(
@@ -71,6 +72,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if not known.spawned:
                 unspawneds.append(known)
 
+        to_simulator = []
         for (known, obstacle) in zip(unspawneds, self._spawn_obstacles_impl([unspawned.obstacle for unspawned in unspawneds])):
             if not obstacle:
                 continue
@@ -78,8 +80,9 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             known.spawned = True
 
             if known.layer == ObstacleLayer.UNUSED:
-                if self._simulator.spawn_entity(known.obstacle):
-                    known.layer = layer
+                to_simulator.append(known.obstacle)
+
+        self._simulator.obstacle_spawn(to_simulator)
 
     def spawn_dynamic_obstacles(
         self,
@@ -95,7 +98,7 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         for obstacle in obstacles:
             if (known := self._known_obstacles.get(obstacle.name)) is not None:
                 known.obstacle = obstacle
-                self._simulator.move_entity(known.obstacle.name, known.obstacle.pose)
+                self._simulator.pedestrian_move(known.obstacle.name, known.obstacle.pose)
                 known.layer = ObstacleLayer.INUSE
             else:
                 known = self._known_obstacles.create_or_get(
@@ -105,6 +108,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             if not known.spawned:
                 unspawneds.append(known)
 
+        to_simulator = []
+
         for (known, obstacle) in zip(unspawneds, self._spawn_dynamic_obstacles_impl([unspawned.obstacle for unspawned in unspawneds])):
             if not obstacle:
                 continue
@@ -112,8 +117,8 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
             known.spawned = True
 
             if known.layer == ObstacleLayer.UNUSED:
-                if self._simulator.spawn_entity(known.obstacle):
-                    known.layer = ObstacleLayer.INUSE
+                to_simulator.append(known.obstacle)
+        self._simulator.pedestrian_spawn(to_simulator)
 
     def spawn_world(
         self,
@@ -153,49 +158,64 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
         self._logger.debug(f'removing obstacles (level {purge})')
         if purge >= ObstacleLayer.WORLD:
             self._simulator.remove_walls_doors()
-        for obstacle_id, obstacle in list(self._known_obstacles.items()):
-            if purge >= obstacle.layer:
-                self._simulator.delete_entity(name=obstacle_id)
-                self._known_obstacles.forget(name=obstacle_id)
+
+        static = []
+        dynamic = []
+        for oid, known in list(self._known_obstacles.items()):
+            if purge >= known.layer:
+                if isinstance(known.obstacle, DynamicObstacle):
+                    dynamic.append(known.obstacle)
+                else:
+                    static.append(known.obstacle)
+                self._known_obstacles.forget(name=oid)
+
+        self._simulator.obstacle_delete(static)
+        self._simulator.pedestrian_delete(dynamic)
 
     def spawn_robot(
         self,
-        robot: Robot,
-    ):
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         """
         Spawns a robot.
-        @robot: Robot description.
+        @robot: Robot.
         """
-        self._logger.debug(f'spawning robot {robot.name}')
-        self._simulator.spawn_entity(robot)
-        self._spawn_robot_impl(robot)
+        self._logger.debug(f'spawning {len(robots)} robots')
+        sim_success = self._simulator.robot_spawn(robots)
+        human_success = self._spawn_robot_impl(tuple(r for r, s in zip(robots, sim_success) if s))
+        human_iter = iter(human_success)
+        success = (s and next(human_iter) for s in sim_success)
+        return tuple(success)
 
     def remove_robot(
         self,
-        name: str,
-    ):
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         """
-        Removes a robot from the simulation.
-        @name: Robot name
+        Removes robot from the simulation.
+        @robot: Robot.
         """
-        self._logger.debug(f'removing robot {name}')
-        self._simulator.delete_entity(name)
-        self._remove_robot_impl(name)
+        self._logger.debug(f'removing {len(robots)} robots')
+        sim_success = self._simulator.robot_delete(robots)
+        human_success = self._remove_robot_impl(tuple(r for r, s in zip(robots, sim_success) if s))
+        human_iter = iter(human_success)
+        success = (s and next(human_iter) for s in sim_success)
+        return tuple(success)
 
     def move_robot(
         self,
-        name: str,
-        pose: Pose
-    ):
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         """
-        Moves a robot.
-        @name: Robot name
-        @position: Target position
+        Moves robot.
+        @robot: Robot.
         """
-        self._logger.debug(
-            f'moving robot {name} to {repr(pose)}')
-        self._simulator.move_entity(name, pose)
-        self._move_robot_impl(name, pose)
+        self._logger.debug(f'moving {len(robots)} robots')
+        sim_success = self._simulator.robot_move(robots)
+        human_success = self._move_robot_impl(tuple(r for r, s in zip(robots, sim_success) if s))
+        human_iter = iter(human_success)
+        success = (s and next(human_iter) for s in sim_success)
+        return tuple(success)
 
     # impl
 
@@ -236,23 +256,22 @@ class BaseHumanSimulator(NodeInterface, abc.ABC):
     @abc.abstractmethod
     def _spawn_robot_impl(
         self,
-        robot: Robot,
-    ) -> bool:
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         ...
 
     @abc.abstractmethod
     def _remove_robot_impl(
         self,
-        name: str,
-    ) -> bool:
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         ...
 
     @abc.abstractmethod
     def _move_robot_impl(
         self,
-        name: str,
-        pose: Pose
-    ) -> bool:
+        robots: Sequence[Robot],
+    ) -> Sequence[bool]:
         ...
 
 
