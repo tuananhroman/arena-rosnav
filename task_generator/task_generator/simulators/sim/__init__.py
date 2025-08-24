@@ -63,6 +63,12 @@ class BaseSim(NodeInterface):
         """
         raise NotImplementedError()
 
+    def update_pedestrian(self, name: str, pose: Pose, velocity: float) -> bool:
+        """
+        Update pedestrian.
+        """
+        raise NotImplementedError()
+
     def delete_entity(self, name: str) -> bool:
         raise NotImplementedError()
 
@@ -71,8 +77,8 @@ class BaseSim(NodeInterface):
         Add a list of walls to the simulator.
         """
         raise NotImplementedError()
-        
-    def spawn_floors(self,floors: list[Floor]) -> bool:
+
+    def spawn_floors(self, floors: list[Floor]) -> bool:
         """
         Add a list of floors to the simulator.
         """

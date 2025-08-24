@@ -1,35 +1,23 @@
+import itertools
 import os
+import random
 import time
 import typing
-import random
-import numpy as np
-import math
 
 import arena_simulation_setup.entities.robot
 import attrs
+import numpy as np
 import rclpy
 import rclpy.client
-
-# Import dependencies.
-from isaacsim_msgs.srv import (
-    DeletePrim,
-    GetPrimAttributes,
-    ImportObstacles,
-    ImportUsd,
-    MovePrim,
-    Pedestrian,
-    SpawnWall,
-    SpawnDoor,
-    UrdfToUsd,
-    MovePed,
-    SpawnFloor
-)
-from isaacsim_msgs.msg import Person, NavPed
-from task_generator.shared import DynamicObstacle, ModelType, Obstacle, Robot
-from task_generator.simulators.sim import BaseSim
-import itertools
-import numpy as np
+from isaacsim_msgs.msg import NavPed, Person
+from isaacsim_msgs.srv import (DeletePrim, GetPrimAttributes, ImportObstacles,
+                               ImportUsd, MovePed, MovePrim, Pedestrian,
+                               SpawnDoor, SpawnFloor, SpawnWall, UrdfToUsd)
 from std_msgs.msg import String as StdString
+
+from task_generator.shared import (DynamicObstacle, ModelType, Obstacle, Pose,
+                                   Robot)
+from task_generator.simulators.sim import BaseSim
 
 
 @attrs.define()
@@ -127,7 +115,7 @@ class IsaacSimulator(BaseSim):
         self._logger.info("All service clients initialized and available.")
 
     def spawn_entity(self, entity):
-        self._logger.info(f"Attempting to spawn model: {entity.name}")
+        self._logger.debug(f"Attempting to spawn model: {entity.name}")
 
         if isinstance(entity, DynamicObstacle):
             return self._spawn_pedestrian(entity)
@@ -139,10 +127,12 @@ class IsaacSimulator(BaseSim):
         return self._spawn_obstacle(entity)
 
     def move_entity(self, name, pose):
-        self._logger.info(f"Attempting to move entitiy: {name}")
+        self._logger.debug(f"Attempting to move entity: {name}")
+        self._logger.debug(f"position: {pose.position.x,pose.position.y}")
+        self._logger.debug(f"orientation: {pose.orientation}")
 
-        self._logger.info(f"position: {pose.position.x,pose.position.y}")
-        self._logger.info(f"orientation: {pose.orientation}")
+        if name in self.ped_dict:
+            name = os.path.join('pedestrians', name)
 
         response = self.services.move_prim.client.call(
             MovePrim.Request(
@@ -153,6 +143,11 @@ class IsaacSimulator(BaseSim):
         if response is None:
             raise RuntimeError(f'failed to move entity: service timed out')
         self._all_removed = False
+        return True
+
+    def update_pedestrian(self, name: str, pose, velocity: float) -> bool:
+        self._logger.debug(f"Updating pedestrian {name} to {repr(pose)} with velocity {velocity}")
+        self._move_pedestrian(name, pose, velocity)
         return True
 
     def delete_entity(self, name):
@@ -381,30 +376,30 @@ class IsaacSimulator(BaseSim):
                 ]
             )
         )
-        nav_ped = NavPed()
-        nav_ped.path = (
-            os.path.join(
-                pedestrian.name,
-                # model_name,
-                "ManRoot",
-                model_name.removeprefix("original_"),
-            )
-        )
-        nav_ped.goal_pose = [
-            pedestrian.waypoints[-1].x,
-            pedestrian.waypoints[-1].y,
-            0.0,
-        ]
-        # nav_ped.goal_pose = [5.0, 2.0, 0.0]
-        nav_ped.velocity = 0.5
-        req = MovePed.Request()
-        req.nav_list = [nav_ped]
-        self._move_pedestrian(req)
+
+        self._move_pedestrian(pedestrian.name, Pose(position=pedestrian.waypoints[-1]), velocity=0.5)
         # self.num_of_peds += 1
         return True
 
-    def _move_pedestrian(self, nav_list: MovePed.Request):
-        response = self.services.move_pedestrians.client.call(nav_list)
+    def _move_pedestrian(self, name: str, pose: Pose, velocity: float) -> bool:
+        if not name in self.ped_dict:
+            self._logger.warning(f"Pedestrian {name} not found in ped_dict")
+            return False
+
+        nav_ped = NavPed()
+        nav_ped.path = (
+            os.path.join(
+                name,
+                "ManRoot",
+                self.ped_dict[name].replace("original_", ""),
+            )
+        )
+        nav_ped.goal_pose = list(pose.to_2d())
+        nav_ped.velocity = velocity
+        req = MovePed.Request()
+        req.nav_list = [nav_ped]
+
+        self.services.move_pedestrians.client.call(req)
         return True
 
     def _delete_all_pedestrians(self, prim_path):

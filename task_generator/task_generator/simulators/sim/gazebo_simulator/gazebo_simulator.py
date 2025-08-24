@@ -198,6 +198,11 @@ class GazeboSimulator(BaseSim):
             traceback.print_exc()
             return False
 
+    def update_pedestrian(self, name: str, pose: Pose, velocity: float) -> bool:
+        # Gazebo does not support editing actors after spawning
+        del name, pose, velocity
+        return True
+
     def spawn_entity(self, entity):
         try:
             # Create spawn request

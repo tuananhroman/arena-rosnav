@@ -152,9 +152,6 @@ class _PedestrianHelper:
             })
         )
 
-
-
-
     @classmethod
     def create_sdf(cls, agent_config: HunavDynamicObstacle) -> str:
         """Create SDF description for pedestrian using gz-sim actor format"""
@@ -268,7 +265,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         if not arena_peds_success:
             self._logger.error("Arena peds publisher setup failed!")
         else:
-            self._logger.error("Arena peds publisher setup complete")
+            self._logger.info("Arena peds publisher setup complete")
 
             # Setup obstacle subscriber
         if not self._setup_obstacle_subscriber():
@@ -286,11 +283,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # Orientation smoothing (wie Isaac Wrapper)
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
-        self._pending_moves = Agents()  
-        
-
-
-
+        self._pending_moves = Agents()
 
     @property
     def _simulator_type(self) -> Constants.SimSimulator:
@@ -408,23 +401,23 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Setup arena_peds publisher and timer - separate from services"""
         try:
             self._logger.info("=== ARENA PEDS PUBLISHER SETUP START ===")
-            
+
             # Create publisher
             self._arena_peds_publisher = self.node.create_publisher(
                 Pedestrians,
                 self._namespace('arena_peds'),
                 10
             )
-            
+
             # Create timer
             self._arena_peds_timer = self.node.create_timer(
                 0.1,  # 10 Hz
                 self._publish_arena_peds_callback
             )
-            
+
             self._logger.info("=== ARENA PEDS PUBLISHER SETUP COMPLETE ===")
             return True
-            
+
         except Exception as e:
             self._logger.error(f"Arena peds publisher setup failed: {e}")
             return False
@@ -433,7 +426,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Setup obstacle subscriber for closest_obs from HuNavSystemPlugin"""
         try:
             self._logger.info("=== OBSTACLE SUBSCRIBER SETUP START ===")
-            
+
             # Create subscriber
             obstacle_topic = self._namespace('hunav_closest_obstacles')
             self._obstacle_subscriber = self.node.create_subscription(
@@ -442,14 +435,14 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 self._obstacle_callback,
                 10
             )
-            
+
             # Store latest obstacle data
             self._latest_obstacles = {}
-            
+
             self._logger.info(f"Subscribed to {obstacle_topic}")
             self._logger.info("=== OBSTACLE SUBSCRIBER SETUP COMPLETE ===")
             return True
-            
+
         except Exception as e:
             self._logger.error(f"Obstacle subscriber setup failed: {e}")
             return False
@@ -458,12 +451,12 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Store latest obstacle data from HuNavSystemPlugin"""
         try:
             self._latest_obstacles.clear()
-            
+
             for obs_agent in msg.agents:
                 self._latest_obstacles[obs_agent.name] = obs_agent.closest_obs
-                
+
             self._logger.debug(f"Updated obstacle data for {len(self._latest_obstacles)} agents")
-            
+
         except Exception as e:
             self._logger.error(f"Error in obstacle callback: {e}")
 
@@ -471,7 +464,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         """Update agent closest_obs with latest obstacle data before HuNav call"""
         if not self._latest_obstacles:
             return
-            
+
         for agent in current_agents.agents:
             if agent.name in self._latest_obstacles:
                 agent.closest_obs = self._latest_obstacles[agent.name]
@@ -492,7 +485,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
             # Debug output
             # for agent in self._get_agents_container.agents:
-            #     self._logger.error(f"Sending agent {agent.name}: desired_velocity={agent.desired_velocity}, goal_force_factor={agent.behavior.goal_force_factor}")
+            #     self._logger.debug(f"Sending agent {agent.name}: desired_velocity={agent.desired_velocity}, goal_force_factor={agent.behavior.goal_force_factor}")
 
             return response
 
@@ -509,20 +502,20 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
     def _move_entity_callback(self):
         """Pedestrian Move Entity Callback for non gazebo simulators"""
-        
+
         # Use the already calculated agent updates from arena pedestrian callback
         if not hasattr(self, '_pending_moves') or not self._pending_moves:
             return
-        
+
         try:
             # move_entity for each agent
             for updated_agent in self._pending_moves.agents:
                 pose = Pose.from_msg(updated_agent.position)
-                #self._logger.error(f"pose of updated agent: {pose}")
-                self._simulator.move_entity(updated_agent.name, pose)
+                # self._logger.error(f"pose of updated agent: {pose}")
+                self._simulator.update_pedestrian(updated_agent.name, pose, updated_agent.desired_velocity)
 
             self._pending_moves = None
-            
+
         except Exception as e:
             self._logger.error(f"Failed to update agent positions: {e}")
 
@@ -543,11 +536,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
                 self._get_agents_container.agents.append(agent_msg)
                 self._agents_container.agents.append(agent_msg)
                 # self._logger.error(f"spawn_dynamic_obstacle_agents_container {self._agents_container}")
-                
+
                 # Create separate arena pedestrian
                 arena_pedestrian = self._create_arena_pedestrian(hunav_obstacle, unique_id)
                 self._arena_pedestrians_container.pedestrians.append(arena_pedestrian)
-                self._logger.error(f"Added arena pedestrian {arena_pedestrian.name} - Total: {len(self._arena_pedestrians_container.pedestrians)}")
+                self._logger.debug(f"Added arena pedestrian {arena_pedestrian.name} - Total: {len(self._arena_pedestrians_container.pedestrians)}")
 
                 # Store in pedestrians dictionary
                 self._pedestrians[agent_msg.id] = {
@@ -659,7 +652,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         success = self._call_delete_actors_service()
 
         if not success:
-            self._logger.error("Failed to delete  Pedestrians from ECM - continuing anyway")
+            self._logger.info("Failed to delete  Pedestrians from ECM - continuing anyway")
             # Don't return False - continue with deletion
 
         # Phase 2: Clear local agents container
@@ -667,7 +660,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._get_agents_container = Agents()
         self._logger.debug("Cleared local agents container")
 
-        # Phase 3: Reset HunavSim 
+        # Phase 3: Reset HunavSim
         success = self._reset_hunav_agents()
         if not success:
             self._logger.error("Failed to reset HuNav agents - continuing anyway")
@@ -692,7 +685,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
             request.current_agents = Agents()
             request.current_agents.header.stamp = self.node.get_clock().now().to_msg()
             request.current_agents.header.frame_id = "map"
-
 
             self._logger.info("Calling HuNav ResetAgents service...")
             response = self._reset_agents_client.call(request)
@@ -741,7 +733,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._agents_container.agents.clear()
         self._arena_pedestrians_container.pedestrians.clear()
 
-  
         self._last_updated_agents = None
         self._last_smooth_yaws = {}
         self._agent_previous_orientations = {}
@@ -819,7 +810,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # self._logger.debug(f"Hunav Manager Closest Obstacles: {agent_msg.closest_obs}")
 
         # After creating the agent message:
-        self._logger.error(f"""            ##Complete Debug for the set attributes
+        self._logger.debug(f"""            ##Complete Debug for the set attributes
                 Full HunavObstacle Details:
                 ID: {agent_msg.id}
                 Name: {agent_msg.name}
@@ -862,103 +853,98 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
         return agent_msg
 
-
     def _create_arena_pedestrian(self, hunav_obstacle: HunavDynamicObstacle, unique_id: int) -> Pedestrian:
         """Create arena_people_msgs.Pedestrian (separate from hunav)"""
-        
+
         arena_ped = Pedestrian()
-        
+
         arena_ped.name = hunav_obstacle.name
         arena_ped.id = unique_id
-        
+
         arena_ped.position.position.x = hunav_obstacle.init_pose.x
         arena_ped.position.position.y = hunav_obstacle.init_pose.y
         arena_ped.position.position.z = 1.25
-        
+
         from tf_transformations import quaternion_from_euler
         quat = quaternion_from_euler(0, 0, hunav_obstacle.yaw)
         arena_ped.position.orientation.x = quat[0]
-        arena_ped.position.orientation.y = quat[1] 
+        arena_ped.position.orientation.y = quat[1]
         arena_ped.position.orientation.z = quat[2]
         arena_ped.position.orientation.w = quat[3]
-        
+
         # Initial twist (zero at spawn)
         arena_ped.twist.linear.x = 0.0
         arena_ped.twist.linear.y = 0.0
         arena_ped.twist.angular.z = 0.0
-        
+
         # Animation state from behavior
         arena_ped.animation_state = self._map_hunav_behavior_to_arena_state(hunav_obstacle.behavior.type)
-        
-        
+
         self._logger.debug(f"Created arena pedestrian: {arena_ped.name}")
         return arena_ped
 
     def _map_hunav_behavior_to_arena_state(self, behavior_type: int) -> int:
         """Map hunav behavior to arena animation state"""
-        
+
         # Import AgentBehavior constants
         from hunav_msgs.msg import AgentBehavior
-        
+
         behavior_mapping = {
             AgentBehavior.BEH_REGULAR: Pedestrian.WALKING,
-            AgentBehavior.BEH_IMPASSIVE: Pedestrian.IDLE, 
+            AgentBehavior.BEH_IMPASSIVE: Pedestrian.IDLE,
             AgentBehavior.BEH_SURPRISED: Pedestrian.SURPRISED,
             AgentBehavior.BEH_SCARED: Pedestrian.PANIC,
             AgentBehavior.BEH_CURIOUS: Pedestrian.CURIOUS,
             AgentBehavior.BEH_THREATENING: Pedestrian.THREATENING,
         }
-        
-        return behavior_mapping.get(behavior_type, Pedestrian.WALKING)
 
+        return behavior_mapping.get(behavior_type, Pedestrian.WALKING)
 
     def _publish_arena_peds_callback(self):
         """Use last updated agents as current agents (like Plugin does)"""
-        
+
         if not self._arena_pedestrians_container.pedestrians:
             return
-            
+
         try:
             # Use last updated agents as current agents
             if self._last_updated_agents:
                 current_agents = self._last_updated_agents
             else:
                 current_agents = self._agents_container
-            
+
             # Ensure frame_id is set
             current_agents.header.frame_id = "map"
             current_agents.header.stamp = self.node.get_clock().now().to_msg()
 
-            #Update obstacles BEFORE sending to HuNav
+            # Update obstacles BEFORE sending to HuNav
             self._update_agent_obstacles(current_agents)
 
             # Smooth yaw values before sending to HuNav
             current_agents = self._smooth_agents_before_hunav(current_agents)
-            
+
             # Create request
             request = ComputeAgents.Request()
             request.current_agents = current_agents
             request.robot = _create_robot_message()
-            
+
             response = self._compute_agents_client.call(request)
-            
+
             if response and response.updated_agents:
                 # Fix frame_id
                 response.updated_agents.header.frame_id = "map"
                 response.updated_agents.header.stamp = self.node.get_clock().now().to_msg()
-                
+
                 self._last_updated_agents = response.updated_agents
-                
-                # Update arena pedestrians 
+
+                # Update arena pedestrians
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
                         if updated_agent.id == arena_ped.id:
 
                             calculated_vel_x, calculated_vel_y = self._calculate_velocity_from_position_change(updated_agent, arena_ped)
 
-
                             arena_ped.position = self._round_coordinates(updated_agent.position, 2)
-
 
                             arena_ped.twist.linear.x = updated_agent.velocity.linear.x
                             arena_ped.twist.linear.y = updated_agent.velocity.linear.y
@@ -966,15 +952,14 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                             arena_ped.twist.angular.x = 0.0
                             arena_ped.twist.angular.y = 0.0
-                            arena_ped.twist.angular.z = 0.0  
+                            arena_ped.twist.angular.z = 0.0
 
                             import math
                             import tf_transformations
 
-                            
-                            # Orientation through CALCULATED VELOCITY! 
-                            vel_x = calculated_vel_x  
-                            vel_y = calculated_vel_y  
+                            # Orientation through CALCULATED VELOCITY!
+                            vel_x = calculated_vel_x
+                            vel_y = calculated_vel_y
                             velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
 
                             if velocity_magnitude > 0.05:
@@ -982,17 +967,14 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             else:
                                 target_yaw = updated_agent.yaw
 
-                            
                             smoothed_yaw = self._smooth_yaw_slerp(target_yaw, arena_ped.id)
 
-                            
                             quat = tf_transformations.quaternion_from_euler(0, 0, smoothed_yaw)
                             arena_ped.position.orientation.x = quat[0]
-                            arena_ped.position.orientation.y = quat[1] 
+                            arena_ped.position.orientation.y = quat[1]
                             arena_ped.position.orientation.z = quat[2]
                             arena_ped.position.orientation.w = quat[3]
 
-                            
                             updated_agent.velocity.linear.x = calculated_vel_x
                             updated_agent.velocity.linear.y = calculated_vel_y
                             updated_agent.yaw = smoothed_yaw
@@ -1000,30 +982,29 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             updated_agent.position.orientation.y = quat[1]
                             updated_agent.position.orientation.z = quat[2]
                             updated_agent.position.orientation.w = quat[3]
-                            
-                            self._pending_moves = response.updated_agents # save response for move_entity_callback
+
+                            self._pending_moves = response.updated_agents  # save response for move_entity_callback
 
                             break
-            
+
             # Publish
             self._arena_peds_publisher.publish(self._arena_pedestrians_container)
-            
+
         except Exception as e:
             self._logger.error(f"Error: {e}")
 
     def _smooth_yaw(self, new_yaw, current_yaw):
         import math
-        
+
         def normalize_angle(angle):
             return math.atan2(math.sin(angle), math.cos(angle))
-        
-        
-        new_yaw = normalize_angle(new_yaw - 0.30)  
+
+        new_yaw = normalize_angle(new_yaw - 0.30)
         current_yaw = normalize_angle(current_yaw)
         diff = normalize_angle(new_yaw - current_yaw)
-        
-        if abs(diff) > math.radians(25):  
-            return normalize_angle(current_yaw + (diff * 0.1))  
+
+        if abs(diff) > math.radians(25):
+            return normalize_angle(current_yaw + (diff * 0.1))
         else:
             return current_yaw
 
@@ -1042,111 +1023,105 @@ class HunavHumanSimulator(DummyHumanSimulator):
         position.position.z = round(position.position.z, decimals)
         return position
 
-
     def _calculate_movement_yaw(self, agent):
         import math
-        
+
         # Velocity-basierte OrientTION
         vel_x = agent.velocity.linear.x
         vel_y = agent.velocity.linear.y
-        
+
         # Only if the Agent moves
         velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
-        if velocity_magnitude > 0.05:  
+        if velocity_magnitude > 0.05:
             movement_yaw = math.atan2(vel_y, vel_x)
             return movement_yaw
         else:
-            # If no Movement, use same Orientation dont change it 
+            # If no Movement, use same Orientation dont change it
             return None
-
 
     def _calculate_velocity_from_position_change(self, updated_agent, arena_ped, dt=0.1):
         """Calculate Position from the velocity change"""
         import math
-        
-        # Previous position 
+
+        # Previous position
         prev_x = arena_ped.position.position.x
         prev_y = arena_ped.position.position.y
-        
+
         # Current position
         curr_x = updated_agent.position.position.x
         curr_y = updated_agent.position.position.y
-        
-        
+
         vel_x = (curr_x - prev_x) / dt
         vel_y = (curr_y - prev_y) / dt
-        
-        # Speed limiting 
+
+        # Speed limiting
         velocity_magnitude = math.sqrt(vel_x**2 + vel_y**2)
         if velocity_magnitude > updated_agent.desired_velocity:
-            
+
             scale_factor = updated_agent.desired_velocity / velocity_magnitude
             vel_x *= scale_factor
             vel_y *= scale_factor
-        
+
         return vel_x, vel_y
 
-
-    
     def _slerp_quaternions(self, q1_list, q2_list, t):
         """Spherical linear interpolation between two quaternions"""
         import math
-        
+
         # Manual quaternion normalization
         def normalize_quat(q):
-            norm = math.sqrt(sum(x*x for x in q))
-            return [x/norm for x in q] if norm > 0 else [0, 0, 0, 1]
-        
+            norm = math.sqrt(sum(x * x for x in q))
+            return [x / norm for x in q] if norm > 0 else [0, 0, 0, 1]
+
         # Convert lists to normalized quaternions
         q1 = normalize_quat(q1_list)
         q2 = normalize_quat(q2_list)
-        
+
         # Calculate dot product
         dot = sum(a * b for a, b in zip(q1, q2))
-        
+
         # If dot product is negative, negate one quaternion for shorter path
         if dot < 0.0:
             q2 = [-x for x in q2]
             dot = -dot
-        
+
         # If quaternions are very close, use linear interpolation
         if dot > 0.9995:
             result = [q1[i] + t * (q2[i] - q1[i]) for i in range(4)]
             return normalize_quat(result)
-        
+
         # Calculate spherical interpolation
         theta_0 = math.acos(abs(dot))
         sin_theta_0 = math.sin(theta_0)
         theta = theta_0 * t
         sin_theta = math.sin(theta)
-        
+
         s0 = math.cos(theta) - dot * sin_theta / sin_theta_0
         s1 = sin_theta / sin_theta_0
-        
+
         result = [s0 * q1[i] + s1 * q2[i] for i in range(4)]
         return normalize_quat(result)
-
 
     def _smooth_yaw_slerp(self, target_yaw, agent_id):
         """Smooth yaw transitions to avoid orientation errors of Hunavs inner calculations"""
         import math
-        
+
         def normalize_angle(angle):
             return math.atan2(math.sin(angle), math.cos(angle))
-        
+
         target_yaw = normalize_angle(target_yaw)
-        
+
         if agent_id in self._agent_previous_orientations:
             prev_yaw = self._agent_previous_orientations[agent_id]
             yaw_diff = normalize_angle(target_yaw - prev_yaw)
-            
+
             # Smooth interpolation
             smoothed_yaw = prev_yaw + yaw_diff * self._orientation_smoothing_factor
             smoothed_yaw = normalize_angle(smoothed_yaw)
         else:
             smoothed_yaw = target_yaw
-        
+
         # Store for next frame
         self._agent_previous_orientations[agent_id] = smoothed_yaw
-        
+
         return smoothed_yaw

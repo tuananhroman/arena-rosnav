@@ -26,6 +26,10 @@ class DummySimulator(BaseSim):
         self._logger.debug(f"moving {name} {repr(pose)}")
         return True
 
+    def update_pedestrian(self, name: str, pose: Pose, velocity: float) -> bool:
+        self._logger.debug(f"updating pedestrian {name} to {repr(pose)} with velocity {velocity}")
+        return True
+
     def delete_entity(self, name: str) -> bool:
         self._logger.debug(f"deleting {name}")
         return True
