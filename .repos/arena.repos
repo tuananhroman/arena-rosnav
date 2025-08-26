@@ -30,6 +30,10 @@ repositories:
     type: git
     url: https://github.com/BehaviorTree/BehaviorTree.CPP.git
     version: v3.8@669392a
+  deps/nav2/BehaviorTree:
+    type: git
+    url: https://github.com/BehaviorTree/BehaviorTree.ROS2.git
+    version: humble@7a6ace6
   deps/nav2/diagnostics:
     type: git
     url: https://github.com/ros/diagnostics.git
@@ -52,7 +56,7 @@ repositories:
   deps/hunav/hunav_sim:
     type: git
     url: https://github.com/voshch/hunav_sim.git
-    version: humble@a69cf96
+    version: humble@f5d95376
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
