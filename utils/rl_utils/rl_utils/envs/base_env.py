@@ -5,12 +5,16 @@ from typing import Any, Dict, List, Optional, Tuple, Type, Union
 import gymnasium
 import numpy as np
 import rclpy
+import yaml
 from geometry_msgs.msg import Twist
-from rosnav_rl.observations import (
-    DoneObservation,
-    ObservationCollectorUnit,
-    ObservationManager,
-    get_required_observation_units,
+
+# from rosnav_rl.observations import (
+#     DoneObservation,
+#     ObservationCollectorUnit,
+#     ObservationManager,
+#     get_required_observation_units,
+from rosnav_rl.observations.factory.factory import (
+    create_observation_manager_from_config,
 )
 from rosnav_rl.reward.reward_function import RewardFunction
 from rosnav_rl.spaces import BaseSpaceManager
@@ -21,25 +25,10 @@ from rosnav_rl_msgs.srv import GetCommand
 from std_srvs.srv import Empty as EmptySrv
 
 from rl_utils.node import SupervisorNode
-from rl_utils.utils.envs import determine_termination
+from rl_utils.utils.envs import determine_termination, get_twist_from_action
 from rl_utils.utils.type_alias.observation import InformationDict
 
-
-def get_twist_from_action(action: np.ndarray) -> Twist:
-    """
-    Converts an action array to a Twist message.
-
-    Args:
-        action (np.ndarray): The action array containing linear and angular velocities.
-
-    Returns:
-        Twist: A Twist message with the linear and angular velocities set.
-    """
-    twist = Twist()
-    twist.linear.x = float(action[0])
-    twist.linear.y = float(action[1])
-    twist.linear.z = float(action[2])
-    return twist
+from rosnav_rl.utils.logging import flush_errors_decorator
 
 
 class ArenaBaseEnv(ABC, gymnasium.Env):
@@ -141,8 +130,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
 
     def _setup_ros_services(self):
         """Creates ROS2 services and clients required for training."""
-        # self._setup_action_service()
-        task_srv_name = str(self.ns.simulation_ns("reset_task"))
+        task_srv_name = self.ns.simulation_ns("reset_task").to_string()
         self._reset_task_srv = self.node.create_client(
             EmptySrv,
             task_srv_name,
@@ -157,7 +145,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self._setup_action_service()
 
     def _setup_action_service(self):
-        service_name = str(self.ns("get_command"))
+        service_name = self.ns("get_command").to_string()
         self.node.get_logger().info(f"Creating get_command service at: {service_name}")
         self._get_command_srv = self.node.create_service(
             GetCommand,
@@ -165,24 +153,23 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self._on_get_command_request,
             callback_group=rclpy.callback_groups.MutuallyExclusiveCallbackGroup(),
         )
+        self.node.get_logger().info(f"Service {service_name} created successfully!")
 
     def _setup_observation_manager(self):
         """Configures and initializes the ObservationManager."""
-        obs_list = self._model_space_manager.observation_space_list
-        if self.is_train_mode:
-            obs_list += self._reward_function.reward_units
+        with open(
+            "/home/le/arena4_ws_exp/src/planners/rosnav_rl/rosnav_rl/rosnav_rl/observations/observations.yaml",
+            "r",
+        ) as file:
+            config = yaml.safe_load(file)
 
-        required_obs_units: List[Type[ObservationCollectorUnit]] = (
-            get_required_observation_units(obs_list)
-        )
-
-        self.observation_collector = ObservationManager(
+        # Create the observation manager from the configuration
+        self.observation_collector = create_observation_manager_from_config(
+            config=config,
             node=self.node,
-            ns=self.ns,
-            obs_structure=required_obs_units,
-            simulation_state_container=self.__simulation_state_container,
-            obs_unit_kwargs=self._obs_unit_kwargs,
-            wait_for_obs=self.__wait_for_obs,
+            ns=self.ns.to_string(),
+            simulation_state_container=None,  # You can pass a SimulationStateContainer if needed
+            wait_for_obs=False,  # Wait for topics to be available
         )
 
     @property
@@ -226,12 +213,12 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         return self._model_space_manager.decode_action(action)
 
     def _encode_observation(
-        self, observation: ObservationDict, *args, **kwargs
+        self, observation: ObservationDict
     ) -> EncodedObservationDict:
         """Encodes the given observation using the model space encoder."""
-        return self._model_space_manager.encode_observation(observation, **kwargs)
+        return self._model_space_manager.encode_observation(observation)
 
-    def _wait_for_action_consumption(self, timeout: float = 30.0) -> None:
+    def _wait_for_action_consumption(self, timeout: float = 10.0) -> None:
         """
         Waits for the `get_command` service to consume the action set by `step()`.
 
@@ -253,10 +240,17 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             ):
                 self.node.get_logger().error(
                     f"Timeout waiting for action to be consumed after {timeout}s. "
-                    "The simulation controller may not be requesting commands."
+                    "The simulation controller may not be requesting commands. "
+                    f"Action available: {self._action_is_available}, "
+                    f"Action consumed: {self._action_is_consumed}"
                 )
+                # Force reset the state to prevent permanent deadlock
+                self._action_is_consumed = True
+                self._action_is_available = False
+                self._pending_action = None
                 raise RuntimeError("Action consumption timeout")
 
+    @flush_errors_decorator
     def step(
         self, action: np.ndarray
     ) -> Tuple[EncodedObservationDict, float, bool, bool, InformationDict]:
@@ -278,6 +272,9 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         decoded_action = self._decode_action(action)
 
         # Make the action available to the service and notify it.
+        self.node.get_logger().info(
+            f"[Step] Setting action available: {decoded_action}"
+        )
         with self._action_condition:
             if not self._action_is_consumed:
                 self.node.get_logger().warn(
@@ -291,7 +288,11 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self._action_condition.notify()
 
         # Wait for the simulation controller to request and consume the action.
+        self.node.get_logger().info("[Step] Waiting for action consumption...")
         self._wait_for_action_consumption()
+        self.node.get_logger().info(
+            "[Step] Action consumed, proceeding with environment step."
+        )
 
         # Once the action is consumed, proceed with the environment step.
         obs_dict = self.observation_collector.get_observations(
@@ -303,6 +304,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             obs_dict=obs_dict,
             simulation_state_container=self.__simulation_state_container,
         )
+
         self._steps_curr_episode += 1
         info, done = determine_termination(
             reward_info=reward_info,
@@ -313,7 +315,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.__is_first_step = False
 
         return (
-            self._encode_observation(obs_dict, is_done=done),
+            self._encode_observation(obs_dict),
             reward,
             done,
             False,
@@ -373,11 +375,6 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """
         super().reset(seed=seed)
 
-        # Safely destroy the service if it exists to avoid issues on reset.
-        # if getattr(self, "_get_command_srv", None):
-        #     self._get_command_srv.destroy()
-        #     self._get_command_srv = None
-
         # Reset synchronization state
         with self._action_condition:
             self._pending_action = None
@@ -391,7 +388,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.__is_first_step = True
 
         self.node.get_logger().info(
-            f"Resetting environment for episode {self._episode}..."
+            f"[{self.ns.to_string()}] Resetting environment for episode {self._episode}..."
         )
 
         self._before_task_reset()
@@ -404,7 +401,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         obs_dict = self.observation_collector.get_observations(
             is_terminal=False, is_first=True
         )
-        obs_dict[DoneObservation.name] = True  # Indicate it's the first observation
+        obs_dict["is_first"] = True  # Indicate it's the first observation
 
         info = {}
         return self._encode_observation(obs_dict), info
@@ -422,29 +419,35 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self._reset_task_srv.destroy()
 
     def reset_task(self):
-        """
-        Calls the task reset service in a separate thread to avoid deadlocking
-        the main ROS2 executor.
-        """
         if not self._reset_task_srv or not self._reset_task_srv.service_is_ready():
             self.node.get_logger().warn("Reset task service client is not available.")
             return False
 
+        completion_event = threading.Event()
+        result_container = {"success": False, "exception": None}
+
+        def done_callback(future):
+            try:
+                result = future.result()
+                result_container["success"] = result is not None
+            except Exception as e:
+                result_container["exception"] = e
+            finally:
+                completion_event.set()
+
         future = self._reset_task_srv.call_async(EmptySrv.Request())
-        try:
-            rclpy.spin_until_future_complete(self.node, future, timeout_sec=5.0)
-            if future.result() is not None:
-                self.node.get_logger().debug(
-                    f"Service call to '{self._reset_task_srv.srv_name}' was successful."
-                )
+        future.add_done_callback(done_callback)
+
+        # Wait with timeout
+        if completion_event.wait(timeout=2.5):
+            if result_container["success"]:
+                self.node.get_logger().debug("Service call successful.")
             else:
                 self.node.get_logger().error(
-                    f"Service call to '{self._reset_task_srv.srv_name}' failed: {future.exception()}"
+                    f"Service call failed: {result_container['exception']}"
                 )
-        except Exception as e:
-            self.node.get_logger().error(
-                f"Exception while calling '{self._reset_task_srv.srv_name}': {e}"
-            )
+        else:
+            self.node.get_logger().error("Service call timeout.")
 
     def _before_task_reset(self):
         """Hook for executing actions before the task is reset."""
