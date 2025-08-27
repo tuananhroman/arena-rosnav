@@ -567,11 +567,10 @@ class HunavHumanSimulator(DummyHumanSimulator):
                     )
                     obstacle.pose.orientation = Orientation.from_yaw(hunav_obstacle.yaw)
                     self._logger.info(f"Created SDF and loaded System Plugin for: {agent_msg.name}")
-                    results.append(obstacle)
                 else:
                     # For other simulators: use simple model without plugin
                     self._logger.info(f"Using simple spawning for simulator: {self._simulator_type}")
-                    return obstacles  # Return original obstacle without SDF modification
+                results.append(obstacle)
 
             except Exception as e:
                 self._logger.error(f"Error preparing agent: {str(e)}")
