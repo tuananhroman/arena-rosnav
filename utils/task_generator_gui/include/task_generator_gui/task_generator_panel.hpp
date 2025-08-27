@@ -33,6 +33,7 @@
 #include <QDir>
 #include <QHeaderView>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QFontMetrics>
@@ -146,6 +147,8 @@ namespace task_generator_gui
         std::string selected_parametrized_config_file;
         std::string selected_scenario_config_file;
         std::string typed_prompt;
+        bool use_behavior_tree;
+        double top_p;
 
         // UI Components
         QVBoxLayout *root_layout;

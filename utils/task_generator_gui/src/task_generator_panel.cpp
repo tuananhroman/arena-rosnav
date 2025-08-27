@@ -298,6 +298,25 @@ namespace task_generator_gui
 
         else if (obstacles_task_mode == "Prompt")
         {
+            auto use_behavior_tree_checkbox = new QCheckBox();
+            use_behavior_tree_checkbox->setChecked(use_behavior_tree);
+            auto use_behavior_tree_widgetitem = new QTreeWidgetItem(obstacles_tree);
+            use_behavior_tree_widgetitem->setText(0, "Use Behavior Tree");
+            obstacles_tree->setItemWidget(use_behavior_tree_widgetitem, 1, use_behavior_tree_checkbox);
+            connect(use_behavior_tree_checkbox, &QCheckBox::stateChanged, this, [this](const bool &value)
+                    { use_behavior_tree = value; });
+
+            auto top_p_spin_box = new QDoubleSpinBox();
+            top_p_spin_box->setMinimum(0.0);
+            top_p_spin_box->setMaximum(1.0);
+            top_p_spin_box->setSingleStep(0.1);
+            top_p_spin_box->setValue(top_p);
+            auto top_p_widgetitem = new QTreeWidgetItem(obstacles_tree);
+            top_p_widgetitem->setText(0, "Nucleus sampling threshold (top_p)");
+            obstacles_tree->setItemWidget(top_p_widgetitem, 1, top_p_spin_box);
+            connect(top_p_spin_box, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, [this](const double &value)
+                    { top_p = value; });
+
             auto prompt_text_edit = new QTextEdit();
             prompt_text_edit->setPlaceholderText("Type your prompt here");
             prompt_text_edit->setMinimumHeight(50);
@@ -307,10 +326,11 @@ namespace task_generator_gui
             prompt_text_edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             prompt_text_edit->setLineWrapColumnOrWidth(1);
             prompt_text_edit->setLineWrapMode(QTextEdit::LineWrapMode::WidgetWidth);
+            prompt_text_edit->setText(QString::fromStdString(typed_prompt));
             RCLCPP_INFO(node->get_logger(), "Line wrap mode: %d", prompt_text_edit->lineWrapMode());
-            auto item = new QTreeWidgetItem(obstacles_tree);
-            item->setText(0, "Prompt");
-            obstacles_tree->setItemWidget(item, 1, prompt_text_edit);
+            auto prompt_widgetitem = new QTreeWidgetItem(obstacles_tree);
+            prompt_widgetitem->setText(0, "Prompt");
+            obstacles_tree->setItemWidget(prompt_widgetitem, 1, prompt_text_edit);
             connect(prompt_text_edit, &QTextEdit::textChanged, this, [this, prompt_text_edit]()
                     { typed_prompt = prompt_text_edit->toPlainText().toStdString(); });
         }

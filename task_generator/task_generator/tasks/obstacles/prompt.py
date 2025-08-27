@@ -11,6 +11,7 @@ from openai import OpenAI
 from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
 from ament_index_python.packages import get_package_share_directory
 from task_generator.tasks.obstacles.prompt_utils import ARENA_CONTEXT, BEHAVIOR_TREE_CONTEXT, LOCAL_LM, REMOTE_LM, Root
+import pprint
 
 
 @attrs.define()
@@ -80,18 +81,18 @@ class TM_Prompt(TM_Obstacles):
             messages = [
                 {
                     "role": "system",
-                    "content": f"{self.use_behavior_tree_context}. Generate data base on this world data as below: {world_info}"
+                    "content": f"{BEHAVIOR_TREE_CONTEXT}. Generate data base on this world data as below: {world_info}"
                 },
                 {
                     "role": "user", 
-                    "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format above,  with no explanation, thoughts, or extra text."
+                    "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON using the format above,  with no explanation, thoughts, or extra text."
                 }
             ]
         else:
             messages = [
                 {
                     "role": "system",
-                    "content": f"{self.context}. Generate data base on this world data as below: {world_info}"
+                    "content": f"{ARENA_CONTEXT}. Generate data base on this world data as below: {world_info}"
                 },
                 {
                     "role": "user", 
@@ -164,8 +165,11 @@ class TM_Prompt(TM_Obstacles):
         try:
             config = json.loads(answer)
             if use_behavior_tree:
-                behavior_tree_xml = Root.parse_raw(answer).to_xml()
-
+                self.node.get_logger().warn("LLM answer in json format:")
+                self.node.get_logger().warn(pprint.pformat(answer, indent=2))
+                behavior_tree_xml = Root.model_validate_json(answer).to_xml()
+                self.node.get_logger().warn("LLM answer parsed to xml format:")
+                self.node.get_logger().warn(pprint.pformat(behavior_tree_xml, indent=2))
                 return behavior_tree_xml
 
         except json.JSONDecodeError as e:
@@ -259,8 +263,6 @@ class TM_Prompt(TM_Obstacles):
                 raise RuntimeError(f"Error loading config from {config_path}") from e
             
         default_hunav_config = _load_config() # Is not used yet
-
-        self.context = ARENA_CONTEXT
 
         self._config = PromptConfig(
             user_prompt=self.node.ROSParam[str](

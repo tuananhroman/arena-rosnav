@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Union, Literal
+from typing import Dict, List, Optional, Union, Literal, Any
 from pydantic import BaseModel
 
 # TreeNodesModel
@@ -13,7 +13,7 @@ class InputPort(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="input_port", 
+            "input_port", 
             attrib={
                 "name": self.name, 
                 "type": self.type
@@ -32,7 +32,7 @@ class OutputPort(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="output_port",
+            "output_port",
             attrib={
                 "name": self.name,
                 "type": self.type
@@ -48,7 +48,7 @@ class Condition(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="Condition",
+            "Condition",
             attrib={
                 "ID": self.ID
             }
@@ -72,7 +72,7 @@ class Action(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="Action",
+            "Action",
             attrib={
                 "ID": self.ID
             }
@@ -95,7 +95,7 @@ class TreeNodesModel(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="TreeNodesModel",
+            "TreeNodesModel",
             attrib={}
         )
 
@@ -112,11 +112,10 @@ class TreeNodesModel(BaseModel):
 class TreeNode(BaseModel):
     ID: str
     name: str
-    attributes: List[Dict]
+    attributes: Dict[str, Any] = {}
 
-    @abstractmethod
     def to_xml(self) -> ET.Element:
-        raise NotImplementedError()
+        ...
 
 class DecorationNode(TreeNode):
     ID: Literal[
@@ -128,7 +127,7 @@ class DecorationNode(TreeNode):
 
     def to_xml(self):
         element = ET.Element(
-            tag=self.ID,
+            self.ID,
             attrib=self.attributes
         )
 
@@ -142,11 +141,11 @@ class ControlNode(TreeNode):
         "Sequence",
         "Fallback"
     ]
-    children_nodes: List[TreeNode]
+    children_nodes: List["NodeUnion"]
 
     def to_xml(self):
         element = ET.Element(
-            tag=self.ID,
+            self.ID,
             attrib=self.attributes
         )
 
@@ -159,7 +158,7 @@ class ControlNode(TreeNode):
 class LeafNode(ABC, TreeNode):
     def to_xml(self):
         element = ET.Element(
-            tag=self.ID,
+            self.ID,
             attrib=self.attributes
         )
 
@@ -168,6 +167,14 @@ class LeafNode(ABC, TreeNode):
 
 class ActionNode(LeafNode):
     ID: Literal[
+        # Old nodes
+        "UpdateGoal"
+        "RegularNav",
+        "SurprisedNav",
+        "CuriousNav",
+        "ScaredNav",
+        "ThreateningNav",
+        # New nodes
         "FindNearestAgent",
         "SaySomething",
         "SetGroupId",
@@ -191,6 +198,10 @@ class ActionNode(LeafNode):
 
 class ConditionNode(LeafNode):
     ID: Literal[
+        # Old nodes
+        "IsGoalReached"
+        "IsRobotVisible",
+        # New nodes
         "RandomChanceCondition",
         "IsRobotFacingAgent",
         "IsAgentVisible",
@@ -203,14 +214,15 @@ class ConditionNode(LeafNode):
         "IsLookingAtMe"
     ]
 
+NodeUnion = Union[ControlNode, DecorationNode, LeafNode]
 
 class BehaviorTree(BaseModel):
     ID: str
-    children_nodes: List[TreeNode]
+    children_nodes: List[NodeUnion]
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="BehaviorTree",
+            "BehaviorTree",
             attrib={
                 "ID": self.ID
             }
@@ -229,7 +241,7 @@ class Root(BaseModel):
     
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            tag="root",
+            "root",
             attrib={
                 "main_tree_to_execute": self.main_tree_to_execute,
                 "BTCPP_format": self.BTCPP_format
@@ -242,3 +254,23 @@ class Root(BaseModel):
             element.append(behavior_tree.to_xml())
 
         return element
+
+
+if __name__ == "__main__":
+
+    import json
+    import pprint
+    from xml.dom import minidom
+    from context import behavior_tree_format
+
+    json_str = behavior_tree_format.strip().strip("Output must strictly follow this structure:").strip("\n    ```json").strip("\n    ```\n    Do NOT explain anything. Output JSON only.")
+
+    test = Root.model_validate_json(json_str)
+
+    xml_str = test.to_xml()
+    pretty_bytes = minidom.parseString(
+        ET.tostring(xml_str, encoding="UTF-8")
+    ).toprettyxml(indent="  ", encoding="UTF-8")
+
+    pretty_str = pretty_bytes.decode("UTF-8")
+    print(pretty_str)

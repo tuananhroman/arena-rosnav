@@ -179,6 +179,14 @@ namespace task_generator_gui
                     auto prompt = parameters_client->get_parameter<std::string>("task.prompt.user_prompt");
 
                     typed_prompt = prompt;
+
+                    auto use_bt = parameters_client->get_parameter<bool>("task.prompt.behavior_tree");
+
+                    use_behavior_tree = use_bt;
+
+                    auto p = parameters_client->get_parameter<double>("task.prompt.top_p");
+
+                    top_p = p;
                 }
             }
 
@@ -488,7 +496,18 @@ namespace task_generator_gui
             parameter.name = "task.prompt.user_prompt";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
             parameter.value.string_value = typed_prompt;
-            RCLCPP_INFO(service_node->get_logger(), "parameter.value.string_value %s", parameter.value.string_value.c_str());
+            request->parameters.push_back(parameter);
+
+            parameter = rcl_interfaces::msg::Parameter();
+            parameter.name = "task.prompt.behavior_tree";
+            parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
+            parameter.value.bool_value = use_behavior_tree;
+            request->parameters.push_back(parameter);
+
+            parameter = rcl_interfaces::msg::Parameter();
+            parameter.name = "task.prompt.top_p";
+            parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
+            parameter.value.double_value = top_p;
             request->parameters.push_back(parameter);
         }
     }

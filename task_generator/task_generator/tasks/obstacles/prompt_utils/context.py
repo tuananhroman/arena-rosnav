@@ -57,7 +57,162 @@ arena_field_descriptions = """
 # Behavior tree format
 # --------------------
 behavior_tree_format = """
-
+    Output must strictly follow this structure:
+    ```json
+    {
+        "main_tree_to_execute": "CuriousNavTree",
+        "BTCPP_format": "4",
+        "tree_nodes_model": {
+            "actions": [
+            {
+                "ID": "CuriousNav",
+                "input_ports": [
+                {
+                    "name": "agent_id",
+                    "type": "int",
+                    "value": "identifier of the agent"
+                },
+                {
+                    "name": "time_step",
+                    "type": "double",
+                    "value": "time step in seconds to compute movement"
+                },
+                {
+                    "name": "stop_distance",
+                    "type": "double",
+                    "value": "the agent stops when is closer than this distance"
+                },
+                {
+                    "name": "agent_vel",
+                    "type": "double",
+                    "value": "the agent velocity approaching the robot"
+                }
+                ]
+            }
+            ],
+            "conditions": [
+            {
+                "ID": "IsRobotVisible",
+                "input_ports": [
+                {
+                    "name": "agent_id",
+                    "type": "int",
+                    "value": "identifier of the agent"
+                }
+                ]
+            },
+            {
+                "ID": "TimeExpiredCondition",
+                "input_ports": [
+                {
+                    "name": "seconds",
+                    "type": "double",
+                    "value": "duration of the timer in seconds"
+                },
+                {
+                    "name": "ts",
+                    "type": "double",
+                    "value": "time step to be accumulated"
+                },
+                {
+                    "name": "only_once",
+                    "type": "bool",
+                    "value": "boolean to indicate if the timer must be reset at the end or not"
+                }
+                ]
+            }
+            ]
+        },
+        "behavior_trees": [
+            {
+            "ID": "CuriousNavTree",
+            "children_nodes": [
+                {
+                "ID": "Fallback",
+                "name": "CuriousFallback",
+                "attributes": {},
+                "children_nodes": [
+                    {
+                    "ID": "Sequence",
+                    "name": "CurNav",
+                    "attributes": {},
+                    "children_nodes": [
+                        {
+                        "ID": "IsRobotVisible",
+                        "name": "",
+                        "attributes": {
+                            "agent_id": "{id}",
+                            "distance": "10.0"
+                        }
+                        },
+                        {
+                        "ID": "Inverter",
+                        "name": "",
+                        "attributes": {},
+                        "children_nodes": [
+                            {
+                            "ID": "TimeExpiredCondition",
+                            "name": "",
+                            "attributes": {
+                                "seconds": "{duration}",
+                                "ts": "{dt}",
+                                "only_once": "{once}"
+                            }
+                            }
+                        ]
+                        },
+                        {
+                        "ID": "CuriousNav",
+                        "name": "",
+                        "attributes": {
+                            "agent_id": "{id}",
+                            "time_step": "{dt}",
+                            "stop_distance": "{stopdist}",
+                            "agent_vel": "{maxvel}"
+                        }
+                        }
+                    ]
+                    },
+                    {
+                    "ID": "Sequence",
+                    "name": "RegNav",
+                    "attributes": {},
+                    "children_nodes": [
+                        {
+                        "ID": "SetBlackboard",
+                        "name": "",
+                        "attributes": {
+                            "output_key": "agentid",
+                            "value": "{id}"
+                        }
+                        },
+                        {
+                        "ID": "SetBlackboard",
+                        "name": "",
+                        "attributes": {
+                            "output_key": "timestep",
+                            "value": "{dt}"
+                        }
+                        },
+                        {
+                        "ID": "SubTree",
+                        "name": "",
+                        "attributes": {
+                            "ID": "RegularNavTree",
+                            "id": "{agentid}",
+                            "dt": "{timestep}"
+                        }
+                        }
+                    ]
+                    }
+                ]
+                }
+            ]
+            }
+        ]
+    }
+    ```
+    Do NOT explain anything. Output JSON only.
 """
 
 behavior_tree_descriptions = """
