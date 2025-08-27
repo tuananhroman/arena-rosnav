@@ -92,7 +92,7 @@ class RobotManager(NodeInterface):
             self._goal_tolerance_distance = 1.0
             self._goal_tolerance_angle = 0.523599
             self._safety_distance = 0.25
-            print(f"Warning: Using default values for robot parameters: {e}")
+            self._logger.warn(f"Using default values for robot parameters: {e}")
 
         self._robot = robot
         self._robot.extra.setdefault('namespace', self.namespace)

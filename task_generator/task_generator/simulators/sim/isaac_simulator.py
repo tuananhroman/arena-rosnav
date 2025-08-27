@@ -4,19 +4,35 @@ import random
 import time
 import typing
 
+import arena_people_msgs.msg
 import arena_simulation_setup.entities.robot
 import attrs
 import numpy as np
 import rclpy
 import rclpy.client
 from isaacsim_msgs.msg import NavPed, Person
-from isaacsim_msgs.srv import (DeletePrim, GetPrimAttributes, ImportObstacles,
-                               ImportUsd, MovePed, MovePrim, Pedestrian,
-                               SpawnDoor, SpawnFloor, SpawnWall, UrdfToUsd)
+from isaacsim_msgs.srv import (
+    DeletePrim,
+    GetPrimAttributes,
+    ImportObstacles,
+    ImportUsd,
+    MovePed,
+    MovePrim,
+    Pedestrian,
+    SpawnDoor,
+    SpawnFloor,
+    SpawnWall,
+    UrdfToUsd,
+)
 from std_msgs.msg import String as StdString
 
-from task_generator.shared import (DynamicObstacle, ModelType, Namespace,
-                                   Obstacle, Pose, Robot)
+from task_generator.shared import (
+    DynamicObstacle,
+    ModelType,
+    Namespace,
+    Obstacle,
+    Robot,
+)
 from task_generator.simulators.sim import BaseSim
 
 
@@ -339,6 +355,9 @@ class IsaacSimulator(BaseSim):
         return True
 
     def pedestrian_spawn(self, pedestrians):
+
+        results: list[bool] = []
+
         # TODO implement externally managed pedestrians
         for pedestrian in pedestrians:
             model_name = random.choice(
@@ -367,8 +386,7 @@ class IsaacSimulator(BaseSim):
                     "original_male_adult_police_04",
                 ]
             )
-            self.ped_dict[pedestrian.name] = model_name
-            self.services.import_pedestrians.client.call(
+            result = self.services.import_pedestrians.client.call(
                 Pedestrian.Request(
                     people=[
                         Person(
@@ -385,8 +403,20 @@ class IsaacSimulator(BaseSim):
                     ]
                 )
             )
+            if result is not None:
+                self.ped_dict[pedestrian.name] = model_name
+            results.append(result is not None)
 
-        self.pedestrian_update(pedestrians)
+        self.pedestrian_update(
+            arena_people_msgs.msg.Pedestrians(pedestrians=[
+                arena_people_msgs.msg.Pedestrian(
+                    name=ped.name,
+                    pose=ped.pose.to_msg(),
+                )
+                for ped
+                in pedestrians
+            ])
+        )
         return True
 
     def pedestrian_update(self, pedestrians):
@@ -402,12 +432,12 @@ class IsaacSimulator(BaseSim):
             nav_ped.path = (
                 self._NS_PEDESTRIAN(name, "ManRoot", self.ped_dict[name].replace("original_", ""))
             )
-            nav_ped.goal_pose = [ped.waypoints[0].x, ped.waypoints[0].y, 0.0]
-            nav_ped.velocity = ped.velocity
+            nav_ped.goal_pose = [ped.pose.position.x, ped.pose.position.y, 0.0]
+            nav_ped.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
             req.nav_list.append(nav_ped)
             return True
 
-        results = tuple(map(impl, pedestrians))
+        results = tuple(map(impl, pedestrians.pedestrians))
 
         self.services.move_pedestrians.client.call(req)
         return results

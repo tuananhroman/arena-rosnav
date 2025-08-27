@@ -5,7 +5,8 @@
 import abc
 from collections.abc import Sequence
 
-from task_generator.shared import DynamicObstacle, Obstacle, Pose, Robot
+from task_generator.shared import DynamicObstacle, Obstacle, Robot
+from arena_people_msgs.msg import Pedestrians
 
 
 class ObstacleITF(abc.ABC):
@@ -44,7 +45,7 @@ class PedestrianITF(abc.ABC):
         raise NotImplementedError()
 
     @abc.abstractmethod
-    def pedestrian_update(self, pedestrians: Sequence[DynamicObstacle]) -> Sequence[bool]:
+    def pedestrian_update(self, pedestrians: Pedestrians) -> Sequence[bool]:
         """Navigate pedestrians to position with velocity."""
         raise NotImplementedError()
 

@@ -91,7 +91,7 @@ class GazeboSimulator(BaseSim):
 
     def pedestrian_update(self, pedestrians):
         # Gazebo does not support modifying actors after spawning
-        return (True,) * len(pedestrians)
+        return (True,) * len(pedestrians.pedestrians)
 
     def spawn_floors(self, floors):
         # Gazebo does not support spawning floors

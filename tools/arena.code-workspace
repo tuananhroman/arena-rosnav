@@ -122,6 +122,7 @@
 			"${workspaceFolder:arena-rosnav}/../../../build/ament_index_python",
 			"${workspaceFolder:arena-rosnav}/../../../build/arena_rclpy_mixins/",
 			"${workspaceFolder:arena-rosnav}/../../../build/hunav_msgs/",
+			"${workspaceFolder:arena-rosnav}/../../../build/arena_people_msgs/",
 			"${workspaceFolder:arena-rosnav}/../../../build/launch/",
 			"${workspaceFolder:arena-rosnav}/../../../build/launch_ros/",
 			"${workspaceFolder:arena-rosnav}/.venv/lib/python3.10/site-packages/"
@@ -139,10 +140,15 @@
 			"${workspaceFolder:arena-rosnav}/../../../build/ament_index_python",
 			"${workspaceFolder:arena-rosnav}/../../../build/arena_rclpy_mixins/",
 			"${workspaceFolder:arena-rosnav}/../../../build/hunav_msgs/",
+			"${workspaceFolder:arena-rosnav}/../../../build/arena_people_msgs/",
 			"${workspaceFolder:arena-rosnav}/../../../build/arena_rclpy_mixins/",
 			"${workspaceFolder:arena-rosnav}/../../../build/launch/",
 			"${workspaceFolder:arena-rosnav}/../../../build/launch_ros/",
 			"${workspaceFolder:arena-rosnav}/.venv/lib/python3.10/site-packages/"
 		]
+	},
+	"launch": {
+		"version": "0.2.0",
+		"configurations": []
 	}
 }

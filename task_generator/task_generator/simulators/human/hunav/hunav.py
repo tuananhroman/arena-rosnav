@@ -6,20 +6,26 @@ import traceback
 import attrs
 import geometry_msgs.msg
 from ament_index_python.packages import get_package_share_directory
+from arena_people_msgs.msg import Pedestrian, Pedestrians
+from arena_people_msgs.srv import DeleteActors
 from arena_rclpy_mixins.shared import Namespace
 from geometry_msgs.msg import Point
 from hunav_msgs.msg import Agent, AgentBehavior, Agents, WallSegment
-from hunav_msgs.srv import (ComputeAgent, ComputeAgents,
-                            GetAgents, GetWalls, MoveAgent, ResetAgents)
-from arena_people_msgs.msg import Pedestrian, Pedestrians
-from arena_people_msgs.srv import DeleteActors
+from hunav_msgs.srv import ComputeAgent, ComputeAgents, GetAgents, GetWalls, MoveAgent
+from std_srvs.srv import Trigger
 
 from task_generator.constants import Constants
-from task_generator.shared import (Model, ModelType, ModelWrapper, Obstacle,
-                                   Pose, Position)
+from task_generator.shared import (
+    Model,
+    ModelType,
+    ModelWrapper,
+    Obstacle,
+    Orientation,
+    Pose,
+    Position,
+)
 from task_generator.simulators.human.dummy import DummyHumanSimulator
 from task_generator.simulators.sim import BaseSim
-from task_generator.shared import Orientation
 
 from . import HunavDynamicObstacle
 
@@ -223,7 +229,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
     SERVICE_COMPUTE_AGENT = 'compute_agent'
     SERVICE_COMPUTE_AGENTS = 'compute_agents'
     SERVICE_MOVE_AGENT = 'move_agent'
-    SERVICE_RESET_AGENTS = 'reset_agents'
+    SERVICE_CLEAR_AGENTS = 'clear_agents'
     SERVICE_GET_AGENTS = 'get_agents'
     SERVICE_GET_WALLS = 'get_walls'
     SERVICE_DELETE_ACTORS = 'delete_actors'
@@ -283,7 +289,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
         # Orientation smoothing (wie Isaac Wrapper)
         self._agent_previous_orientations = {}
         self._orientation_smoothing_factor = 0.15  # 0.05-0.3 range
-        self._pending_moves = Agents()
 
     @property
     def _simulator_type(self) -> Constants.SimSimulator:
@@ -299,97 +304,91 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.debug(f"Task generator namespace: {self._namespace}")
 
         # Create service names with full namespace path
-        service_names = {
-            'compute_agent': self.node.service_namespace(self.SERVICE_COMPUTE_AGENT),
-            'compute_agents': self.node.service_namespace(self.SERVICE_COMPUTE_AGENTS),
-            'move_agent': self.node.service_namespace(self.SERVICE_MOVE_AGENT),
-            'reset_agents': self.node.service_namespace(self.SERVICE_RESET_AGENTS),
-            'get_agents': self.node.service_namespace(self.SERVICE_GET_AGENTS),
-            'get_walls': self.node.service_namespace(self.SERVICE_GET_WALLS),
-            'delete_actors': self.node.service_namespace(self.SERVICE_DELETE_ACTORS)
-
-        }
-
-        # Log service creation attempts
-        for service, full_name in service_names.items():
-            self._logger.info(f"Creating service client for {service} at: {full_name}")
+        class service_names:
+            compute_agent = self.node.service_namespace(self.SERVICE_COMPUTE_AGENT)
+            compute_agents = self.node.service_namespace(self.SERVICE_COMPUTE_AGENTS)
+            move_agent = self.node.service_namespace(self.SERVICE_MOVE_AGENT)
+            clear_agents = self.node.service_namespace(self.SERVICE_CLEAR_AGENTS)
+            get_agents = self.node.service_namespace(self.SERVICE_GET_AGENTS)
+            get_walls = self.node.service_namespace(self.SERVICE_GET_WALLS)
+            delete_actors = self.node.service_namespace(self.SERVICE_DELETE_ACTORS)
 
         # Create service clients
         self._logger.debug("Creating compute_agent client...")
         self._compute_agent_client = self.node.create_client(
             ComputeAgent,
-            service_names['compute_agent']
+            service_names.compute_agent
         )
 
         self._logger.debug("Creating compute_agents client...")
         self._compute_agents_client = self.node.create_client(
             ComputeAgents,
-            service_names['compute_agents'],
+            service_names.compute_agents
         )
 
         self._logger.debug("Creating move_agent client...")
         self._move_agent_client = self.node.create_client(
             MoveAgent,
-            service_names['move_agent'],
+            service_names.move_agent,
         )
 
-        self._logger.debug("Creating reset_agents client...")
-        self._reset_agents_client = self.node.create_client(
-            ResetAgents,
-            service_names['reset_agents'],
+        self._logger.debug("Creating clear_agents client...")
+        self._clear_agents_client = self.node.create_client(
+            Trigger,
+            service_names.clear_agents,
         )
 
         self._logger.debug("Creating delete_actors client...")
         self._delete_actors_client = self.node.create_client(
             DeleteActors,
-            service_names['delete_actors'],
+            service_names.delete_actors,
         )
        # Create GetAgents service provider
-        self._logger.debug(f"Creating get_agents service provider at: {service_names['get_agents']}")
+        self._logger.debug(f"Creating get_agents service provider at: {service_names.get_agents}")
         self._get_agents_server = self.node.create_service(
             GetAgents,
-            service_names['get_agents'],
+            service_names.get_agents,
             self._get_agents_callback,
         )
         self._logger.debug("GetAgents service provider created")
 
         # Create GetWalls service provider
-        self._logger.debug(f"Creating get_walls service provider at: {service_names['get_walls']}")
+        self._logger.debug(f"Creating get_walls service provider at: {service_names.get_walls}")
         self._get_walls_service = self.node.create_service(
             GetWalls,
-            service_names['get_walls'],
+            service_names.get_walls,
             self._get_walls_callback,
         )
         self._logger.debug("GetWalls service provider created")
 
         # Wait for Services
         required_services = [
-            (self._compute_agent_client, 'compute_agent'),
-            (self._compute_agents_client, 'compute_agents'),
-            (self._move_agent_client, 'move_agent'),
-            (self._reset_agents_client, 'reset_agents')
+            (self._compute_agent_client, service_names.compute_agent),
+            (self._compute_agents_client, service_names.compute_agents),
+            (self._move_agent_client, service_names.move_agent),
+            (self._clear_agents_client, service_names.clear_agents),
 
         ]
 
         max_attempts = float('inf')
-        for client, name in required_services:
+        for client, service in required_services:
             attempts = 0
-            self._logger.debug(f"Waiting for service {name}...")
+            self._logger.debug(f"Waiting for service {service}...")
 
             while attempts < max_attempts:
                 if client.wait_for_service(timeout_sec=2.0):
-                    self._logger.debug(f'Service {name} is available')
+                    self._logger.debug(f'Service {service} is available')
                     break
                 attempts += 1
                 self._logger.debug(
-                    f'Waiting for service {name} (attempt {attempts}/{max_attempts})\n'
-                    f'Looking for service at: {service_names[name]}'
+                    f'Waiting for service {service} (attempt {attempts}/{max_attempts})\n'
+                    f'Looking for service at: {service}'
                 )
 
             if attempts >= max_attempts:
                 self._logger.error(
-                    f'Service {name} not available after {max_attempts} attempts\n'
-                    f'Was looking for service at: {service_names[name]}'
+                    f'Service {service} not available after {max_attempts} attempts\n'
+                    f'Was looking for service at: {service}'
                 )
                 self._logger.error("=== SETUP_SERVICES FAILED ===")
                 return False
@@ -503,18 +502,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
     def _move_entity_callback(self):
         """Pedestrian Move Entity Callback for non gazebo simulators"""
 
-        # Use the already calculated agent updates from arena pedestrian callback
-        if not hasattr(self, '_pending_moves') or not self._pending_moves:
-            return
-
         try:
-            # move_entity for each agent
-            for updated_agent in self._pending_moves.agents:
-                pose = Pose.from_msg(updated_agent.position)
-                # self._logger.error(f"pose of updated agent: {pose}")
-                self._simulator.update_pedestrian(updated_agent.name, pose, updated_agent.desired_velocity)
-
-            self._pending_moves = None
+            self._simulator.pedestrian_update(self._arena_pedestrians_container)
 
         except Exception as e:
             self._logger.error(f"Failed to update agent positions: {e}")
@@ -527,6 +516,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
             try:
                 # Get unique ID
                 unique_id = len(self._agents_container.agents) + 1
+                self._logger.debug(f"Preparing to spawn dynamic obstacle '{obstacle.name}' with ID {unique_id}")
                 hunav_obstacle = HunavDynamicObstacle.from_dynamic_obstacle(obstacle)
                 hunav_obstacle = attrs.evolve(hunav_obstacle, id=unique_id)
 
@@ -660,7 +650,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.debug("Cleared local agents container")
 
         # Phase 3: Reset HunavSim
-        success = self._reset_hunav_agents()
+        success = self._clear_hunav_agents()
         if not success:
             self._logger.error("Failed to reset HuNav agents - continuing anyway")
 
@@ -670,33 +660,27 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info(f"Complete reset completed: {success}")
         return success
 
-    def _reset_hunav_agents(self):
-        """Reset HuNav by calling ResetAgents service"""
+    def _clear_hunav_agents(self):
+        """Reset HuNav by calling ClearAgents service"""
         try:
-            if not self._reset_agents_client.wait_for_service(timeout_sec=2.0):
-                self._logger.error("ResetAgents service not available")
+            if not self._clear_agents_client.wait_for_service(timeout_sec=2.0):
+                self._logger.error("ClearAgents service not available")
                 return False
 
-            request = ResetAgents.Request()
-            request.robot = _create_robot_message()
+            request = Trigger.Request()
 
-            # Empty agents = complete reset signal
-            request.current_agents = Agents()
-            request.current_agents.header.stamp = self.node.get_clock().now().to_msg()
-            request.current_agents.header.frame_id = "map"
+            self._logger.info("Calling HuNav ClearAgents service...")
+            response = self._clear_agents_client.call(request)
 
-            self._logger.info("Calling HuNav ResetAgents service...")
-            response = self._reset_agents_client.call(request)
-
-            if response and response.ok:
-                self._logger.info("HuNav reset successful - ready for new agents")
+            if response and response.success:
+                self._logger.info("HuNav clear successful - ready for new agents")
                 return True
             else:
-                self._logger.error("HuNav reset failed")
+                self._logger.error("HuNav clear failed")
                 return False
 
         except Exception as e:
-            self._logger.error(f"Error calling ResetAgents: {e}")
+            self._logger.error(f"Error calling ClearAgents: {e}")
             return False
 
     def _call_delete_actors_service(self):
@@ -755,53 +739,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._logger.info(f"Preparing agent {hunav_obstacle.name} (ID: {hunav_obstacle.id})")
 
         # Create agent message
-        agent_msg = Agent()
-        agent_msg.id = hunav_obstacle.id
-        agent_msg.name = hunav_obstacle.name
-        agent_msg.type = hunav_obstacle.type
-        agent_msg.skin = hunav_obstacle.skin
-        agent_msg.group_id = hunav_obstacle.group_id
-        agent_msg.desired_velocity = hunav_obstacle.desired_velocity
-        # self._logger.info(f"=== spawn_dynamic_obstacles_desired_velocity: {agent_msg.desired_velocity}===")
-        agent_msg.radius = hunav_obstacle.radius
-
-        # Set position
-        agent_msg.position = geometry_msgs.msg.Pose()
-        agent_msg.position.position.x = hunav_obstacle.init_pose.x
-        agent_msg.position.position.y = hunav_obstacle.init_pose.y
-        agent_msg.position.position.z = 1.250000
-        agent_msg.yaw = hunav_obstacle.yaw
-
-        # Set behavior
-        agent_msg.behavior = AgentBehavior()
-        agent_msg.behavior.type = hunav_obstacle.behavior.type
-        agent_msg.behavior.configuration = hunav_obstacle.behavior.configuration
-        agent_msg.behavior.duration = hunav_obstacle.behavior.duration
-        agent_msg.behavior.once = hunav_obstacle.behavior.once
-        agent_msg.behavior.vel = hunav_obstacle.behavior.vel
-        agent_msg.behavior.dist = hunav_obstacle.behavior.dist
-        agent_msg.behavior.goal_force_factor = 20.0  # hunav_obstacle.behavior.goal_force_factor
-        agent_msg.behavior.obstacle_force_factor = hunav_obstacle.behavior.obstacle_force_factor
-        agent_msg.behavior.social_force_factor = hunav_obstacle.behavior.social_force_factor
-        agent_msg.behavior.other_force_factor = hunav_obstacle.behavior.other_force_factor
-
-        # Set goals
-        agent_msg.goal_radius = hunav_obstacle.goal_radius
-        agent_msg.cyclic_goals = hunav_obstacle.cyclic_goals
-        if hunav_obstacle.goals:
-            agent_msg.goals = hunav_obstacle.goals.as_poses()
-        else:
-            # Default goals if none exist
-            goals = [
-                (-3.133759, -4.166653, 1.250000),
-                (0.997901, -4.131655, 1.250000),
-                (-0.227549, -20.187146, 1.250000)
-            ]
-            for x, y, h in goals:
-                goal = geometry_msgs.msg.Pose()
-                goal.position.x = x
-                goal.position.y = y
-                agent_msg.goals.append(goal)
+        agent_msg = hunav_obstacle.to_msg()
 
         # Add wall obstacles
         # self._logger.debug(f"Hunav Manager Wallpoints: {self._wall_points}")
@@ -860,16 +798,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
         arena_ped.name = hunav_obstacle.name
         arena_ped.id = unique_id
 
-        arena_ped.position.position.x = hunav_obstacle.init_pose.x
-        arena_ped.position.position.y = hunav_obstacle.init_pose.y
-        arena_ped.position.position.z = 1.25
+        arena_ped.pose.position.x = hunav_obstacle.init_pose.x
+        arena_ped.pose.position.y = hunav_obstacle.init_pose.y
+        arena_ped.pose.position.z = 1.25
 
-        from tf_transformations import quaternion_from_euler
-        quat = quaternion_from_euler(0, 0, hunav_obstacle.yaw)
-        arena_ped.position.orientation.x = quat[0]
-        arena_ped.position.orientation.y = quat[1]
-        arena_ped.position.orientation.z = quat[2]
-        arena_ped.position.orientation.w = quat[3]
+        arena_ped.pose.orientation = Orientation.from_yaw(hunav_obstacle.yaw).to_msg()
 
         # Initial twist (zero at spawn)
         arena_ped.twist.linear.x = 0.0
@@ -901,6 +834,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
     def _publish_arena_peds_callback(self):
         """Use last updated agents as current agents (like Plugin does)"""
+
+        self._logger.debug(f"arena_peds_callback: publishing {len(self._arena_pedestrians_container.pedestrians)} pedestrians")
 
         if not self._arena_pedestrians_container.pedestrians:
             return
@@ -936,6 +871,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                 self._last_updated_agents = response.updated_agents
 
+                self._logger.debug(f"Updated agents: {self._last_updated_agents}")
+
                 # Update arena pedestrians
                 for arena_ped in self._arena_pedestrians_container.pedestrians:
                     for updated_agent in response.updated_agents.agents:
@@ -943,7 +880,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                             calculated_vel_x, calculated_vel_y = self._calculate_velocity_from_position_change(updated_agent, arena_ped)
 
-                            arena_ped.position = self._round_coordinates(updated_agent.position, 2)
+                            arena_ped.pose = self._round_coordinates(updated_agent.position, 2)
 
                             arena_ped.twist.linear.x = updated_agent.velocity.linear.x
                             arena_ped.twist.linear.y = updated_agent.velocity.linear.y
@@ -954,7 +891,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
                             arena_ped.twist.angular.z = 0.0
 
                             import math
-                            import tf_transformations
 
                             # Orientation through CALCULATED VELOCITY!
                             vel_x = calculated_vel_x
@@ -968,29 +904,25 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
                             smoothed_yaw = self._smooth_yaw_slerp(target_yaw, arena_ped.id)
 
-                            quat = tf_transformations.quaternion_from_euler(0, 0, smoothed_yaw)
-                            arena_ped.position.orientation.x = quat[0]
-                            arena_ped.position.orientation.y = quat[1]
-                            arena_ped.position.orientation.z = quat[2]
-                            arena_ped.position.orientation.w = quat[3]
+                            arena_ped.pose.orientation = Orientation.from_yaw(smoothed_yaw).to_msg()
 
                             updated_agent.velocity.linear.x = calculated_vel_x
                             updated_agent.velocity.linear.y = calculated_vel_y
                             updated_agent.yaw = smoothed_yaw
-                            updated_agent.position.orientation.x = quat[0]
-                            updated_agent.position.orientation.y = quat[1]
-                            updated_agent.position.orientation.z = quat[2]
-                            updated_agent.position.orientation.w = quat[3]
-
-                            self._pending_moves = response.updated_agents  # save response for move_entity_callback
+                            updated_agent.position.orientation = Orientation.from_yaw(smoothed_yaw).to_msg()
 
                             break
 
             # Publish
+            for ped in self._arena_pedestrians_container.pedestrians:
+                self._logger.debug(f"Publishing pedestrian {ped.name} at ({ped.pose.position.x}, {ped.pose.position.y}) with velocity ({ped.twist.linear.x}, {ped.twist.linear.y})")
+
             self._arena_peds_publisher.publish(self._arena_pedestrians_container)
 
         except Exception as e:
             self._logger.error(f"Error: {e}")
+            import traceback
+            self._logger.error(traceback.format_exc())
 
     def _smooth_yaw(self, new_yaw, current_yaw):
         import math
@@ -998,7 +930,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
         def normalize_angle(angle):
             return math.atan2(math.sin(angle), math.cos(angle))
 
-        new_yaw = normalize_angle(new_yaw - 0.30)
+        new_yaw = normalize_angle(new_yaw)
         current_yaw = normalize_angle(current_yaw)
         diff = normalize_angle(new_yaw - current_yaw)
 
@@ -1015,12 +947,12 @@ class HunavHumanSimulator(DummyHumanSimulator):
             self._last_smooth_yaws[agent.id] = agent.yaw
         return agents
 
-    def _round_coordinates(self, position, decimals=2):
+    def _round_coordinates(self, pose: geometry_msgs.msg.Pose, decimals=2):
         """Round coordinates to avoid floating point errors"""
-        position.position.x = round(position.position.x, decimals)
-        position.position.y = round(position.position.y, decimals)
-        position.position.z = round(position.position.z, decimals)
-        return position
+        pose.position.x = round(pose.position.x, decimals)
+        pose.position.y = round(pose.position.y, decimals)
+        pose.position.z = round(pose.position.z, decimals)
+        return pose
 
     def _calculate_movement_yaw(self, agent):
         import math
@@ -1043,8 +975,8 @@ class HunavHumanSimulator(DummyHumanSimulator):
         import math
 
         # Previous position
-        prev_x = arena_ped.position.position.x
-        prev_y = arena_ped.position.position.y
+        prev_x = arena_ped.pose.position.x
+        prev_y = arena_ped.pose.position.y
 
         # Current position
         curr_x = updated_agent.position.position.x

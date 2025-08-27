@@ -61,8 +61,8 @@ class DummySimulator(BaseSim):
 
     # assorted
     def pedestrian_update(self, pedestrians):
-        self._logger.debug(f'updating {len(pedestrians)} pedestrians')
-        return tuple(True for _ in pedestrians)
+        self._logger.debug(f'updating {len(pedestrians.pedestrians)} pedestrians')
+        return tuple(True for _ in pedestrians.pedestrians)
 
     # world interface
     def spawn_walls(self, walls):
