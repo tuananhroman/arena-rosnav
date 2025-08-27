@@ -1,5 +1,6 @@
 import rclpy
 from rclpy.node import Node
+from rclpy.executors import MultiThreadedExecutor
 import threading
 
 from rl_utils.cfg import TrainingCfg
@@ -15,6 +16,10 @@ class SupervisorNode(Node):
         super().__init__(node_name)
         self.get_logger().info(f"{node_name} has been started.")
         self._shutdown_event = threading.Event()
+
+        # Use MultiThreadedExecutor to handle callback groups properly
+        self._executor = MultiThreadedExecutor()
+        self._executor.add_node(self)
         self._spin_thread = threading.Thread(target=self._spin_loop)
 
     def start_spinning(self):
@@ -22,7 +27,9 @@ class SupervisorNode(Node):
         if not self._spin_thread.is_alive():
             self._shutdown_event.clear()
             self._spin_thread.start()
-            self.get_logger().info("SupervisorNode spinning started.")
+            self.get_logger().info(
+                "SupervisorNode spinning started with MultiThreadedExecutor."
+            )
 
     def stop_spinning(self):
         """Stops the spin loop."""
@@ -32,12 +39,17 @@ class SupervisorNode(Node):
             self.get_logger().info("SupervisorNode spinning stopped.")
 
     def _spin_loop(self):
-        """Continuously spins the ROS2 node in a background thread."""
+        """Continuously spins the ROS2 node in a background thread with MultiThreadedExecutor."""
         while not self._shutdown_event.is_set():
-            rclpy.spin_once(self, timeout_sec=0.1)
+            # Use the executor to handle all callback groups
+            self._executor.spin_once(timeout_sec=0.1)
 
     def destroy_node(self):
         self.stop_spinning()
+        # Clean up executor
+        if hasattr(self, "_executor"):
+            self._executor.remove_node(self)
+            self._executor.shutdown()
         super().destroy_node()
 
 
