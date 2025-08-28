@@ -5,7 +5,7 @@ string name
 uint32 id
 
 # Spatial information
-geometry_msgs/Pose position
+geometry_msgs/Pose pose
 geometry_msgs/Twist twist
 
 # Animation/behavior states (integrated)

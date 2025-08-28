@@ -6,10 +6,10 @@ Value = typing.TypeVar('Value')
 
 class Registry(typing.Generic[Key, Value]):
 
-    __registry: dict[Key, typing.Callable[[], type[Value]]]
+    __registry: dict[Key, typing.Callable[[], typing.Type[Value]]]
     __name: str
 
-    def __init__(self, entries: typing.Optional[dict[Key, type[Value]]] = None) -> None:
+    def __init__(self, entries: typing.Optional[dict[Key, typing.Type[Value]]] = None) -> None:
         if entries is None:
             entries = {}
 
@@ -17,7 +17,7 @@ class Registry(typing.Generic[Key, Value]):
         self.__registry = {**entries}
 
     def register(self, name: Key):
-        def inner_wrapper(class_loader: typing.Callable[[], type[Value]]):
+        def inner_wrapper(class_loader: typing.Callable[[], typing.Type[Value]]):
             assert name not in self.__registry, f"{self.__name} '{name}' already exists!"
 
             self.__registry[name] = class_loader
@@ -25,7 +25,7 @@ class Registry(typing.Generic[Key, Value]):
 
         return inner_wrapper
 
-    def get(self, name: Key) -> type[Value]:
+    def get(self, name: Key) -> typing.Type[Value]:
         assert name in self.__registry, f"{self.__name} '{name}' is not registered!"
 
         instance = self.__registry[name]()

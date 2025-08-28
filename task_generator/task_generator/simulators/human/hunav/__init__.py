@@ -5,6 +5,7 @@ import typing
 
 import attrs
 import geometry_msgs.msg
+import hunav_msgs.msg
 import yaml
 from ament_index_python.packages import get_package_share_directory
 
@@ -46,14 +47,14 @@ class HunavDynamicObstacle:
         type: int
         state: int
         configuration: int
-        duration: float
-        once: bool
-        vel: float
-        dist: float
-        social_force_factor: float
-        goal_force_factor: float
-        obstacle_force_factor: float
-        other_force_factor: float
+        duration: float = attrs.field(converter=float)
+        vel: float = attrs.field(converter=float)
+        dist: float = attrs.field(converter=float)
+        social_force_factor: float = attrs.field(converter=float)
+        goal_force_factor: float = attrs.field(converter=float)
+        obstacle_force_factor: float = attrs.field(converter=float)
+        other_force_factor: float = attrs.field(converter=float)
+        once: bool = False
 
         _default: typing.ClassVar["HunavDynamicObstacle.Behavior"]
 
@@ -80,6 +81,20 @@ class HunavDynamicObstacle:
                     'other_force_factor', cls._default.other_force_factor),
             )
 
+        def to_msg(self) -> hunav_msgs.msg.AgentBehavior:
+            behavior_msg = hunav_msgs.msg.AgentBehavior()
+            behavior_msg.type = self.type
+            behavior_msg.configuration = self.configuration
+            behavior_msg.duration = self.duration
+            behavior_msg.once = self.once
+            behavior_msg.vel = self.vel
+            behavior_msg.dist = self.dist
+            behavior_msg.goal_force_factor = 20.0  # hunav_obstacle.behavior.goal_force_factor
+            behavior_msg.obstacle_force_factor = self.obstacle_force_factor
+            behavior_msg.social_force_factor = self.social_force_factor
+            behavior_msg.other_force_factor = self.other_force_factor
+            return behavior_msg
+
     id: int
     type: int = attrs.field(converter=lambda v: v if isinstance(v, int) else 1)
     skin: int
@@ -95,7 +110,10 @@ class HunavDynamicObstacle:
     radius: float
     linear_vel: float
     angular_vel: float
+
     behavior: Behavior
+    behavior_tree: str
+
     cyclic_goals: bool
     goal_radius: float
     closest_obs: list
@@ -125,6 +143,10 @@ class HunavDynamicObstacle:
         else:
             behavior = cls.Behavior._default
 
+        behavior_tree: str = cls._default.behavior_tree
+        if 'behavior_tree' in extra:
+            behavior_tree = os.path.join(obj.path, extra['behavior_tree'])
+
         return cls(
             name=obj.name,
             init_pose=PositionH(
@@ -142,6 +164,7 @@ class HunavDynamicObstacle:
             linear_vel=extra.get('linear_vel', cls._default.linear_vel),
             angular_vel=extra.get('angular_vel', cls._default.angular_vel),
             behavior=behavior,
+            behavior_tree=behavior_tree,
             cyclic_goals=extra.get('cyclic_goals', cls._default.cyclic_goals),
             goal_radius=extra.get('goal_radius', cls._default.goal_radius),
             closest_obs=[],
@@ -151,6 +174,48 @@ class HunavDynamicObstacle:
             skin=extra.get('skin', cls._default.skin),
             group_id=extra.get('group_id', cls._default.group_id),
         )
+
+    def to_msg(self) -> hunav_msgs.msg.Agent:
+        agent_msg = hunav_msgs.msg.Agent()
+        agent_msg.id = self.id
+        agent_msg.name = self.name
+        agent_msg.type = self.type
+        agent_msg.skin = self.skin
+        agent_msg.group_id = self.group_id
+        agent_msg.desired_velocity = self.desired_velocity
+        # self._logger.info(f"=== spawn_dynamic_obstacles_desired_velocity: {agent_msg.desired_velocity}===")
+        agent_msg.radius = self.radius
+
+        # Set position
+        agent_msg.position = geometry_msgs.msg.Pose()
+        agent_msg.position.position.x = self.init_pose.x
+        agent_msg.position.position.y = self.init_pose.y
+        agent_msg.position.position.z = 1.250000
+        agent_msg.yaw = self.yaw
+
+        # Set behavior
+        agent_msg.behavior = self.behavior.to_msg()
+        agent_msg.behavior_tree = self.behavior_tree
+
+        # Set goals
+        agent_msg.goal_radius = self.goal_radius
+        agent_msg.cyclic_goals = self.cyclic_goals
+        if self.goals:
+            agent_msg.goals = self.goals.as_poses()
+        else:
+            # Default goals if none exist
+            goals = [
+                (-3.133759, -4.166653, 1.250000),
+                (0.997901, -4.131655, 1.250000),
+                (-0.227549, -20.187146, 1.250000)
+            ]
+            for x, y, h in goals:
+                goal = geometry_msgs.msg.Pose()
+                goal.position.x = x
+                goal.position.y = y
+                agent_msg.goals.append(goal)
+
+        return agent_msg
 
     @classmethod
     def parse(cls, obj: dict, model: ModelWrapper) -> "HunavDynamicObstacle":
@@ -174,6 +239,7 @@ class HunavDynamicObstacle:
             yaw=obj.get('yaw', cls._default.yaw),
             id=obj.get("id", cls._default.id),
             behavior=cls.Behavior.parse(obj.get('behavior', {})),
+            behavior_tree=obj.get('behavior_tree', cls._default.behavior_tree),
             type=obj.get('type', cls._default.type),
             skin=obj.get('skin', cls._default.skin),
             group_id=obj.get('group_id', cls._default.group_id),
@@ -195,15 +261,14 @@ def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
     config_path = os.path.join(
         get_package_share_directory("arena_bringup"),
         "configs",
-        "hunav_agents",
+        "hunav",
         filename
     )
 
     try:
         with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
+            agent_config = yaml.safe_load(f)
 
-        agent_config = config['hunav_loader']['ros__parameters']['agent1']
         return HunavDynamicObstacle.parse(agent_config, ModelWrapper(''))
 
     except Exception as e:
@@ -243,6 +308,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     linear_vel=0.,
     angular_vel=0.,
     behavior=HunavDynamicObstacle.Behavior._default,
+    behavior_tree='default.xml',
     cyclic_goals=False,
     goal_radius=0.,
     closest_obs=[],
@@ -250,115 +316,7 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
 
 
 HunavDynamicObstacle._default = _load_config()
-# print("Loaded HunavDynamicObstacle:", HunavDynamicObstacle._default)
 HunavDynamicObstacle.Behavior._default = HunavDynamicObstacle._default.behavior
-# print("Behavior:", HunavDynamicObstacle.Behavior._default)
-
-
-def test_hunav_services(self):
-    """Test all HuNav services with debug logging"""
-    self.node.get_logger().warn("=== TEST_HUNAV_SERVICES START ===")
-
-    # Create test agents
-    self.node.get_logger().warn("Creating test agents...")
-    test_agents = Agents()
-    test_agents.header.stamp = self.node.get_clock().now().to_msg()
-    test_agents.header.frame_id = "map"
-
-    # Create test agent
-    self.node.get_logger().warn("Creating test pedestrian...")
-    test_agent = Agent()
-    test_agent.id = 1
-    test_agent.name = "test_pedestrian"
-    test_agent.type = Agent.PERSON
-    test_agent.pose.position.x = 2.0
-    test_agent.pose.position.y = 2.0
-    test_agent.yaw = 0.0
-    test_agent.desired_velocity = 1.0
-    test_agent.radius = 0.35
-
-    # Set behavior
-    self.node.get_logger().warn("Setting test agent behavior...")
-    test_agent.behavior = AgentBehavior()
-    test_agent.behavior.type = AgentBehavior.BEH_REGULAR
-    test_agent.behavior.configuration = AgentBehavior.BEH_CONF_DEFAULT
-    test_agent.behavior.duration = 40.0
-    test_agent.behavior.once = True
-    test_agent.behavior.goal_force_factor = 2.0
-    test_agent.behavior.obstacle_force_factor = 10.0
-    test_agent.behavior.social_force_factor = 5.0
-
-    # Add test goal
-    self.node.get_logger().warn("Adding test goal...")
-    goal = Pose()
-    goal.position.x = 5.0
-    goal.position.y = 5.0
-    test_agent.goals.append(goal)
-    test_agent.cyclic_goals = True
-    test_agent.goal_radius = 0.3
-
-    test_agents.agents.append(test_agent)
-
-    # Create test robot
-    self.node.get_logger().warn("Creating test robot...")
-    test_robot = Agent()
-    test_robot.id = 0
-    test_robot.name = "test_robot"
-    test_robot.type = Agent.ROBOT
-    test_robot.pose.position.x = 0.0
-    test_robot.pose.position.y = 0.0
-    test_robot.yaw = 0.0
-    test_robot.radius = 0.3
-
-    try:
-        self.node.get_logger().warn("Testing compute_agents service...")
-        request = ComputeAgents.Request()
-        request.robot = test_robot
-        request.current_agents = test_agents
-
-        self.node.get_logger().warn(f"Sending request with {len(request.current_agents.agents)} agents")
-        # Change this line:
-        response = self._compute_agents_client.call(request)  # Use synchronous call
-
-        if response:
-            self.node.get_logger().warn(f"Received response with {len(response.updated_agents.agents)} agents")
-            for agent in response.updated_agents.agents:
-                self.node.get_logger().warn(
-                    f"\nAgent {agent.name} (ID: {agent.id}):"
-                    f"\n  Position: ({agent.pose.position.x:.2f}, {agent.pose.position.y:.2f})"
-                    f"\n  Behavior Type: {agent.behavior.type}"
-                    f"\n  Current State: {agent.behavior.state}"
-                    f"\n  Linear Velocity: {agent.linear_vel:.2f}"
-                    f"\n  Angular Velocity: {agent.angular_vel:.2f}"
-                )
-    except Exception as e:
-        self.node.get_logger().error(f"compute_agents service test failed: {str(e)}")
-
-    # Test move_agent service
-    try:
-        self.node.get_logger().warn("Testing move_agent service...")
-        request = MoveAgent.Request()
-        request.agent_id = test_agent.id
-        request.robot = test_robot
-        request.current_agents = test_agents
-
-        future = self._move_agent_client.call_async(request)
-        rclpy.spin_until_future_complete(self.node, future)
-
-        if future.result():
-            response = future.result()
-            agent = response.updated_agent
-            self.node.get_logger().warn(
-                f"Move_agent response:"
-                f"\n  Agent: {agent.name} (ID: {agent.id})"
-                f"\n  New Position: ({agent.position.position.x:.2f}, {agent.position.position.y:.2f})"
-                f"\n  New Yaw: {agent.yaw:.2f}"
-                f"\n  Behavior State: {agent.behavior.state}"
-            )
-    except Exception as e:
-        self.node.get_logger().error(f"move_agent service test failed: {str(e)}")
-
-    self.node.get_logger().warn("=== TEST_HUNAV_SERVICES COMPLETE ===")
 
 
 # Animation configuration (from WorldGenerator)
