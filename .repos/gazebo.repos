@@ -16,10 +16,10 @@ repositories:
   gazebo/hunav_gz_plugin:
     type: git
     url: https://github.com/Arena-Rosnav/hunav_gz_plugin.git
-    version: main@a8ed124c
+    version: main@12c4f2c1
 
 
   gazebo/arena_human_plugin:
     type: git
     url: https://github.com/Arena-Rosnav/gz_arena_human_plugin.git
-    version: garden@2ebfb744
+    version: garden@bc17fb3f
