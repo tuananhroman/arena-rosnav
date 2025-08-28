@@ -78,8 +78,19 @@ class _Realizer:
             end=self._realize_position(door.end),
         )
 
-    def _realize_elevator(self, elevator: Elevator):
-        return elevator
+    def _realize_elevator(self, elevator: Elevator) -> Elevator:
+        pos = list(elevator.position)
+        if len(pos) >= 2:
+            pos[0] += self._config.x
+            pos[1] += self._config.y
+        name = self._prefix(elevator.name)
+        destination = self._prefix(elevator.destination) if getattr(elevator, 'destination', None) else elevator.destination
+        return attrs.evolve(
+            elevator,
+            name=name,
+            position=pos,
+            destination=destination,
+        )
 
     def realize(
         self,
