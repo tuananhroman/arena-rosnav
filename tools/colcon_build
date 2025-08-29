@@ -89,7 +89,7 @@ ARGS=(
     "--cmake-args '-DPython3_ROOT_DIR=$(cd "${ARENA_WS_DIR}/src/arena/arena-rosnav" && poetry env info -p) -DBUILD_TESTING=OFF'"
 )
 
-if [ -n "${#_BUILD_PACKAGES[*]}" ]; then
+if [ ${#_BUILD_PACKAGES[@]} -ne 0 ]; then
     ARGS+=("--packages-select" "${_BUILD_PACKAGES[@]}")
 fi
 
