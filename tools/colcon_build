@@ -1,5 +1,14 @@
 #! /usr/bin/env bash
 
+# environment variables:
+# BUILD_ALL (default: 0): Whether to build base ros2 packages.
+# SKIP_OLD (default: 1): Whether to skip building packages that are already up-to-date.
+# BASE_PATHS (default: ${ARENA_WS_DIR}/src): The base paths to search for packages.
+# PATHS (default: all packages in BASE_PATHS): The specific packages to build.
+# BUILD_PACKAGES (default: all packages in PATHS): The packages to build.
+# BUILD_BASE (default: ${ARENA_WS_DIR}/build): The base directory for building packages.
+# INSTALL_BASE (default: ${ARENA_WS_DIR}/install): The base directory for installing packages.
+
 . "${ARENA_WS_DIR:-.}/src/arena/arena-rosnav/tools/source.bash" || return $?
 
 _SKIP_OLD=${SKIP_OLD:-$([[ "${*}" == *"--packages-"* ]] || echo 1 )}
