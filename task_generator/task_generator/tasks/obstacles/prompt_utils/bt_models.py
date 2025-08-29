@@ -120,7 +120,6 @@ class TreeNode(BaseModel):
 
 class DecorationNode(TreeNode):
     ID: Literal[
-        "Fallback",
         "TimeDelayDecorator",
         "RetryUntilSuccessful"
     ]
@@ -169,7 +168,7 @@ class LeafNode(ABC, TreeNode):
 class ActionNode(LeafNode):
     ID: Literal[
         # Old nodes
-        "UpdateGoal"
+        "UpdateGoal",
         "RegularNav",
         "SurprisedNav",
         "CuriousNav",
@@ -200,7 +199,7 @@ class ActionNode(LeafNode):
 class ConditionNode(LeafNode):
     ID: Literal[
         # Old nodes
-        "IsGoalReached"
+        "IsGoalReached",
         "IsRobotVisible",
         # New nodes
         "RandomChanceCondition",

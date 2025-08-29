@@ -330,6 +330,7 @@ behavior_tree_descriptions = """
             - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
             - The waypoints must be valid positions on the map, avoiding walls and obstacles.
         - `bt_root`: the behavior tree specification for that agent.
+
     Inside `bt_root`:
     - `main_tree_to_execute`: the ID of the main behavior tree to run.
     - `BTCPP_format`: the version number of the BehaviorTree.CPP format.
@@ -346,19 +347,19 @@ behavior_tree_descriptions = """
     - `behavior_trees`: the actual Behavior tree structures, Each has:
         - `ID`: unique identifier of the behavior tree.
         - `children_nodes`: the hierarchical Behavior tree nodes.
+
     Behavior tree nodes (children_nodes) description: Each node has:
     - `ID`: the node's type (Sequence, Fallback, Inverter, SetBlackboard, SubTree, IsRobotVisible, CuriousNav, etc.).
     - `name`: optional human-readable name of the node.
     - `attributes`: a dictionary of key-value pairs (parameters passed to the node).
     - `children_nodes`: list of child nodes (present only for control nodes like Sequence, Fallback, Inverter).
-    Common node types:
-    - `Sequence`: executes child nodes in order until one fails.
-    - `Fallback`: executes child nodes in order until one succeeds.
-    - `Inverter`: inverts the success/failure status of its child.
-    - `SetBlackboard`: sets a blackboard variable (output_key, value).
-    - `SubTree`: references another BT by its ID, with parameters passed as attributes.
-    - `Condition Nodes` (e.g., IsRobotVisible, TimeExpiredCondition): evaluate boolean conditions.
-    - `Action Nodes` (e.g., CuriousNav): perform actions with parameters.
+
+    Behavior tree node types:
+    - Decoration node: Among other things, it may alter the result of its child or tick it multiple times. This type of node can have exactly one child node and can have one of the following IDs ["Inverter", "TimeDelayDecorator", "RetryUntilSuccessful"].
+    - Control node: Usually, ticks a child based on the result of its siblings or/and its own state. This type of node can have multiple children nodes and can have one of the following IDs ["Sequence", "Fallback"].
+    - Action node: Perform an action with parameters. This type of node can not have children nodes and can have one of the following IDs ["UpdateGoal", "RegularNav", "SurprisedNav", "CuriousNav", "ScaredNav", "ThreateningNav", "FindNearestAgent", "SaySomething", "SetGroupId", "SetGoal", "StopMovement", "ResumeMovement", "StopAndWaitTimerAction", "ConversationFormation", "GoTo", "ApproachAgent", "ApproachRobot", "BlockRobot", "BlockAgent", "GroupWalk", "LookAtPoint", "LookAtAgent", "LookAtRobot", "FollowAgent"].
+    - Condition node: Evaluate boolean conditions, ticks if a condition is met. This type of node can not have children nodes and can have one of the following IDs["IsGoalReached", "IsRobotVisible","RandomChanceCondition","IsRobotFacingAgent","IsAgentVisible","IsRobotClose","IsAgentClose","IsAtPosition","IsAnyoneSpeaking","IsSpeaking","IsAnyoneLookingAtMe","IsLookingAtMe"].
+    - "SubTree": references another BT by its ID, with parameters passed as attributes.
     Attributes placeholders:
     - Attributes may use placeholders in {} (e.g., {id}, {dt}) which are dynamically substituted with the agent's values during execution.
 
