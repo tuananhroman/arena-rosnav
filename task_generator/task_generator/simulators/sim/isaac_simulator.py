@@ -25,8 +25,7 @@ from isaacsim_msgs.msg import Person, NavPed
 from task_generator.shared import DynamicObstacle, ModelType, Obstacle, Robot
 from task_generator.simulators.sim import BaseSim
 import itertools
-import numpy as np
-
+import numpy as np 
 
 @attrs.define()
 class _Service:
@@ -78,7 +77,7 @@ class IsaacSimulator(BaseSim):
             ),
             move_prim=_Service(type_=MovePrim, name="isaac/move_prim"),
             spawn_wall=_Service(type_=SpawnWall, name="isaac/spawn_wall"),
-            spawn_floor=_Service(type_=SpawnFloor, name='isaac/spawn_floor'),
+            spawn_floor=_Service(type_=SpawnFloor,name='isaac/spawn_floor'),
             import_obstacle=_Service(
                 type_=ImportObstacles, name="isaac/import_obstacle"
             ),
@@ -163,23 +162,64 @@ class IsaacSimulator(BaseSim):
     def spawn_walls(self, walls):
         # return True
         self._logger.info(f"Attempting to spawn walls")
-
+        
         # self.delete_walls()
         time.sleep(0.01)
         for i, wall in enumerate(walls):
             try:
+                current_count = next(self.wall_counter)
                 # print(f"wall {i+1}: {wall}")
                 start = [wall.start.x, wall.start.y]
                 end = [wall.end.x, wall.end.y]
+                type_ = wall.type_ 
+                z_offset = wall.z_offset
+                wall_fill_assets = wall.assets[0]
+                wall_tile_assets = wall.assets[1]
+                if wall.material != '':
+                    wall_material = wall.material
+                else:
+                    wall_material = wall.assets[2]
+                # print(wall_tile_assets)
                 future = self.services.spawn_wall.client.call(
                     SpawnWall.Request(
-                        name=f"wall_{next(self.wall_counter)}",
+                        name=f"wall_{current_count}/wall_{current_count}",
                         start=start,
                         end=end,
                         height=wall.height,
-                        material='Mahogany',
+                        width=wall.width,
+                        material=wall_material,
+                        z_offset=z_offset
                     )
                 )
+                for i, wall_tile_asset in enumerate(wall_tile_assets):
+                    model = wall_tile_asset.model.get([ModelType.USD])
+                    usd_path = os.path.abspath(model.path)
+                    response = self.services.import_obstacle.client.call(
+                        ImportObstacles.Request(
+                            name=f"wall_{current_count}/{wall_tile_asset.name}",
+                            usd_path=usd_path,
+                            pose=wall_tile_asset.pose.to_msg(),
+                            type = wall_tile_asset.type_,
+                        )
+                    )
+                for i, wall_fill_asset in enumerate(wall_fill_assets):
+                    asset_start = [wall_fill_asset.start.x, wall_fill_asset.start.y]
+                    asset_end = [wall_fill_asset.end.x, wall_fill_asset.end.y]
+                    asset_z_offset = wall_fill_asset.z_offset
+                    asset_height = wall_fill_asset.height
+                    asset_width = wall_fill_asset.width
+                    asset_material = wall_fill_asset.material
+                    future = self.services.spawn_wall.client.call(
+                    SpawnWall.Request(
+                        name=f"wall_{current_count}/wall_{current_count}_asset_{i}",
+                        start=asset_start,
+                        end=asset_end,
+                        height=asset_height,
+                        width=asset_width,
+                        material=asset_material,
+                        z_offset=asset_z_offset,
+                    )
+                    )
 
                 self._logger.info(f"Successfully spawned wall {i+1}")
 
@@ -191,29 +231,27 @@ class IsaacSimulator(BaseSim):
         self._all_removed = False
         return True
 
-    def spawn_floors(self, floors):
+    def spawn_floors(self,floors):
         self._logger.info(f"Attempting to spawn floors")
         time.sleep(0.01)
-        for floor in floors:
+        for i, floor in enumerate(floors):
             try:
-                pos = [floor.pos.x, floor.pos.y]
-                i = next(self.floor_counter)
+                pos = [floor.pos.x,floor.pos.y]
                 future = self.services.spawn_floor.client.call(
                     SpawnFloor.Request(
-                        name=f"floor_{i}",
-                        x_length=floor.x_length,
-                        y_length=floor.y_length,
-                        pos=pos,
-                        material=floor.mat,
+                        name=f"floor_{next(self.floor_counter)}",
+                        x_length = floor.x_length,
+                        y_length = floor.y_length,
+                        pos = pos,
+                        material="",
                     )
                 )
-
-                self._logger.info(f"Successfully spawned floor {i}")
-
+                
+                self._logger.info(f"Successfully spawned floor {i+1}")
+            
             except Exception as e:
                 self._logger.error(str(e))
-                return False
-        return True
+                raise 
 
     # TODO: update
     def before_reset_task(self):
@@ -346,6 +384,7 @@ class IsaacSimulator(BaseSim):
                 name=obstacle.name,
                 usd_path=usd_path,
                 pose=obstacle.pose.to_msg(),
+                type = "Obstacle",
             )
         )
         return True
@@ -376,7 +415,7 @@ class IsaacSimulator(BaseSim):
             f"Done initializing Isaac Sim")
 
     def remove_walls(self):
-        self.delete_entity('walls')
+        self.delete_entity('Walls')
         self.delete_entity('obstacles')
         self._all_removed = True
         return True
