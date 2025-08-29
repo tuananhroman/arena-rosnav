@@ -1,4 +1,4 @@
-role = "You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map."
+instruction = "You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map."
 
 # Arena format
 # ------------
@@ -60,154 +60,258 @@ behavior_tree_format = """
     Output must strictly follow this structure:
     ```json
     {
-        "main_tree_to_execute": "CuriousNavTree",
-        "BTCPP_format": "4",
-        "tree_nodes_model": {
-            "actions": [
+        "hunav_agents": [
             {
-                "ID": "CuriousNav",
-                "input_ports": [
-                {
-                    "name": "agent_id",
-                    "type": "int",
-                    "value": "identifier of the agent"
-                },
-                {
-                    "name": "time_step",
-                    "type": "double",
-                    "value": "time step in seconds to compute movement"
-                },
-                {
-                    "name": "stop_distance",
-                    "type": "double",
-                    "value": "the agent stops when is closer than this distance"
-                },
-                {
-                    "name": "agent_vel",
-                    "type": "double",
-                    "value": "the agent velocity approaching the robot"
-                }
-                ]
-            }
-            ],
-            "conditions": [
-            {
-                "ID": "IsRobotVisible",
-                "input_ports": [
-                {
-                    "name": "agent_id",
-                    "type": "int",
-                    "value": "identifier of the agent"
-                }
-                ]
-            },
-            {
-                "ID": "TimeExpiredCondition",
-                "input_ports": [
-                {
-                    "name": "seconds",
-                    "type": "double",
-                    "value": "duration of the timer in seconds"
-                },
-                {
-                    "name": "ts",
-                    "type": "double",
-                    "value": "time step to be accumulated"
-                },
-                {
-                    "name": "only_once",
-                    "type": "bool",
-                    "value": "boolean to indicate if the timer must be reset at the end or not"
-                }
-                ]
-            }
-            ]
-        },
-        "behavior_trees": [
-            {
-            "ID": "CuriousNavTree",
-            "children_nodes": [
-                {
-                "ID": "Fallback",
-                "name": "CuriousFallback",
-                "attributes": {},
-                "children_nodes": [
-                    {
-                    "ID": "Sequence",
-                    "name": "CurNav",
-                    "attributes": {},
-                    "children_nodes": [
-                        {
-                        "ID": "IsRobotVisible",
-                        "name": "",
-                        "attributes": {
-                            "agent_id": "{id}",
-                            "distance": "10.0"
-                        }
-                        },
-                        {
-                        "ID": "Inverter",
-                        "name": "",
-                        "attributes": {},
-                        "children_nodes": [
+                "name": <agent name>,
+                "pos": [
+                    <x>,
+                    <y>,
+                    0
+                ],
+                "type": <agent type>,
+                "model": <agent model>,
+                "waypoints": [
+                    [
+                        <x1>,
+                        <y1>,
+                        0
+                    ],
+                    ...,
+
+                    [
+                        <xn>,
+                        <yn>,
+                        0
+                    ]
+                ],
+                "bt_root": {
+                    "main_tree_to_execute": <ID of main Behavior tree to execute>,
+                    "BTCPP_format": "4",
+                    "tree_nodes_model": {
+                        "actions": [
                             {
-                            "ID": "TimeExpiredCondition",
-                            "name": "",
-                            "attributes": {
-                                "seconds": "{duration}",
-                                "ts": "{dt}",
-                                "only_once": "{once}"
+                                "ID": <ID of an action>,
+                                "input_ports": [
+                                    {
+                                        "name": <port name>,
+                                        "type": <data type>,
+                                        "value": <description text>
+                                    },
+                                ]
+                            },
+                        ]
+                        "conditions": [
+                            {
+                                "ID": <ID of a condition>,
+                                "input_ports": [
+                                    {
+                                        "name": <port name>,
+                                        "type": <data type>,
+                                        "value": <description text>
+                                    }
+                                ]
+                            },
+                        ]
+                    },
+                    "behavior_tree": {
+                        "ID": <ID of Behavior tree>,
+                        "children_nodes": <children nodes of this node> [
+                            {
+                                "ID": <child node ID>,
+                                "name": <child node name>,
+                                "attributes": <attributes/parameters of child node> {},
+                                "children_nodes": <children nodes of this node>
+                            },
+                        ]
+                    }
+                }
+            }
+        ]
+    }
+    ```
+    This is an example:
+    ```json
+    {
+        "hunav_agents": [
+            {
+                "name": "hunav_1",
+                "pos": [
+                    24.0,
+                    2.0,
+                    0
+                ],
+                "type": "adult",
+                "model": "gazebo_actor",
+                "waypoints": [
+                    [
+                        27.1,
+                        7.0,
+                        0
+                    ],
+                    [
+                        17.7,
+                        7.0,
+                        0
+                    ]
+                ],
+                "bt_root": {
+                    "main_tree_to_execute": "CuriousNavTree",
+                    "BTCPP_format": "4",
+                    "tree_nodes_model": {
+                        "actions": [
+                            {
+                                "ID": "CuriousNav",
+                                "input_ports": [
+                                    {
+                                        "name": "agent_id",
+                                        "type": "int",
+                                        "value": "identifier of the agent"
+                                    },
+                                    {
+                                        "name": "time_step",
+                                        "type": "double",
+                                        "value": "time step in seconds to compute movement"
+                                    },
+                                    {
+                                        "name": "stop_distance",
+                                        "type": "double",
+                                        "value": "the agent stops when is closer than this distance"
+                                    },
+                                    {
+                                        "name": "agent_vel",
+                                        "type": "double",
+                                        "value": "the agent velocity approaching the robot"
+                                    }
+                                ]
                             }
+                        ],
+                        "conditions": [
+                            {
+                                "ID": "IsRobotVisible",
+                                "input_ports": [
+                                    {
+                                        "name": "agent_id",
+                                        "type": "int",
+                                        "value": "identifier of the agent"
+                                    }
+                                ]
+                            },
+                            {
+                                "ID": "TimeExpiredCondition",
+                                "input_ports": [
+                                    {
+                                        "name": "seconds",
+                                        "type": "double",
+                                        "value": "duration of the timer in seconds"
+                                    },
+                                    {
+                                        "name": "ts",
+                                        "type": "double",
+                                        "value": "time step to be accumulated"
+                                    },
+                                    {
+                                        "name": "only_once",
+                                        "type": "bool",
+                                        "value": "boolean to indicate if the timer must be reset at the end or not"
+                                    }
+                                ]
                             }
                         ]
-                        },
-                        {
-                        "ID": "CuriousNav",
-                        "name": "",
-                        "attributes": {
-                            "agent_id": "{id}",
-                            "time_step": "{dt}",
-                            "stop_distance": "{stopdist}",
-                            "agent_vel": "{maxvel}"
-                        }
-                        }
-                    ]
                     },
-                    {
-                    "ID": "Sequence",
-                    "name": "RegNav",
-                    "attributes": {},
-                    "children_nodes": [
+                    "behavior_trees": [
                         {
-                        "ID": "SetBlackboard",
-                        "name": "",
-                        "attributes": {
-                            "output_key": "agentid",
-                            "value": "{id}"
-                        }
-                        },
-                        {
-                        "ID": "SetBlackboard",
-                        "name": "",
-                        "attributes": {
-                            "output_key": "timestep",
-                            "value": "{dt}"
-                        }
-                        },
-                        {
-                        "ID": "SubTree",
-                        "name": "",
-                        "attributes": {
-                            "ID": "RegularNavTree",
-                            "id": "{agentid}",
-                            "dt": "{timestep}"
-                        }
+                            "ID": "CuriousNavTree",
+                            "children_nodes": [
+                                {
+                                    "ID": "Fallback",
+                                    "name": "CuriousFallback",
+                                    "attributes": {},
+                                    "children_nodes": [
+                                        {
+                                            "ID": "Sequence",
+                                            "name": "CurNav",
+                                            "attributes": {},
+                                            "children_nodes": [
+                                                {
+                                                    "ID": "IsRobotVisible",
+                                                    "name": "",
+                                                    "attributes": {
+                                                        "agent_id": "{id}",
+                                                        "distance": "10.0"
+                                                    }
+                                                },
+                                                {
+                                                    "ID": "Inverter",
+                                                    "name": "",
+                                                    "attributes": {},
+                                                    "children_nodes": [
+                                                        {
+                                                            "ID": "TimeExpiredCondition",
+                                                            "name": "",
+                                                            "attributes": {
+                                                                "seconds": "{duration}",
+                                                                "ts": "{dt}",
+                                                                "only_once": "{once}"
+                                                            }
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "ID": "CuriousNav",
+                                                    "name": "",
+                                                    "attributes": {
+                                                        "agent_id": "{id}",
+                                                        "time_step": "{dt}",
+                                                        "stop_distance": "{stopdist}",
+                                                        "agent_vel": "{maxvel}"
+                                                    }
+                                                }
+                                            ]
+                                        },
+                                        {
+                                            "ID": "Sequence",
+                                            "name": "RegNav",
+                                            "attributes": {},
+                                            "children_nodes": [
+                                                {
+                                                    "ID": "SetBlackboard",
+                                                    "name": "",
+                                                    "attributes": {
+                                                        "output_key": "agentid",
+                                                        "value": "{id}"
+                                                    }
+                                                },
+                                                {
+                                                    "ID": "SetBlackboard",
+                                                    "name": "",
+                                                    "attributes": {
+                                                        "output_key": "timestep",
+                                                        "value": "{dt}"
+                                                    }
+                                                },
+                                                {
+                                                    "ID": "SubTree",
+                                                    "name": "",
+                                                    "attributes": {
+                                                        "ID": "RegularNavTree",
+                                                        "id": "{agentid}",
+                                                        "dt": "{timestep}"
+                                                    }
+                                                }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
                         }
                     ]
-                    }
-                ]
                 }
-            ]
+            },
+            {
+                "name": "hunav_2",
+                "bt_root": {
+                    ...
+                }
             }
         ]
     }
@@ -216,17 +320,68 @@ behavior_tree_format = """
 """
 
 behavior_tree_descriptions = """
+    Top-level structure
+    - "hunav_agents" contains a list of hunav agents, each with:
+        - `name`: the agent's unique identifier (e.g., "hunav_1").
+        - `pos`: a list [x, y, yaw] representing the object's position and rotation.
+        - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
+        - `model`: the type of model used for the dynamic obstacle (e.g., `gazebo_actor`).
+        - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, 0], [x2, y2, 0], ...]. The `waypoints` must satisfy the following constraints:
+            - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
+            - The waypoints must be valid positions on the map, avoiding walls and obstacles.
+        - `bt_root`: the behavior tree specification for that agent.
+    Inside `bt_root`:
+    - `main_tree_to_execute`: the ID of the main behavior tree to run.
+    - `BTCPP_format`: the version number of the BehaviorTree.CPP format.
+    - `tree_nodes_model`: the definitions of reusable actions and conditions used in the BT.
+        - `actions`: Each action has:
+            - `ID`: the action's identifier (e.g., "CuriousNav").
+            - `input_ports`: list of parameters the action requires, each with:
+            - `name`: parameter name.
+            - `type`: data type (int, double, bool, etc.).
+            - `value`: human-readable description of the parameter.
+        - `conditions`: Each condition has:
+            - `ID`: the condition's identifier (e.g., "IsRobotVisible").
+            - `input_ports`: list of parameters the condition requires (same structure as above).
+    - `behavior_trees`: the actual Behavior tree structures, Each has:
+        - `ID`: unique identifier of the behavior tree.
+        - `children_nodes`: the hierarchical Behavior tree nodes.
+    Behavior tree nodes (children_nodes) description: Each node has:
+    - `ID`: the node's type (Sequence, Fallback, Inverter, SetBlackboard, SubTree, IsRobotVisible, CuriousNav, etc.).
+    - `name`: optional human-readable name of the node.
+    - `attributes`: a dictionary of key-value pairs (parameters passed to the node).
+    - `children_nodes`: list of child nodes (present only for control nodes like Sequence, Fallback, Inverter).
+    Common node types:
+    - `Sequence`: executes child nodes in order until one fails.
+    - `Fallback`: executes child nodes in order until one succeeds.
+    - `Inverter`: inverts the success/failure status of its child.
+    - `SetBlackboard`: sets a blackboard variable (output_key, value).
+    - `SubTree`: references another BT by its ID, with parameters passed as attributes.
+    - `Condition Nodes` (e.g., IsRobotVisible, TimeExpiredCondition): evaluate boolean conditions.
+    - `Action Nodes` (e.g., CuriousNav): perform actions with parameters.
+    Attributes placeholders:
+    - Attributes may use placeholders in {} (e.g., {id}, {dt}) which are dynamically substituted with the agent's values during execution.
 
+    The world information is provided in this JSON-formated data as described below: The map is composed of a list of zones. Each zone has the following fields:
+    - `name`: a unique identifier.
+    - `corners`: a list of 2D points [x, y] marking the zone's corners, you can calculate the zone's position and coverage, and check if a point is within a zone or not base on these points.
+    - `walls`: a list of wall segments, each defined by two 2D points [[x1, y1], [x2, y2]].
+    - `mat`: the material of the floor (can be empty).
+    - `entities`: contains static objects in the zone. Each static object has:
+    -   - `name`: the object's unique name.
+    -   - `model`: the type of object (e.g., `shelf`).
+    -   - `pose`: a list [x, y, z] representing the object's position.
+    - `description`: a human-readable name of the zone.
 """
 
 ARENA_CONTEXT = f"""
-{role}
+{instruction}
 {arena_format}
 {arena_field_descriptions}
 """ 
 
 BEHAVIOR_TREE_CONTEXT = f"""
-{role}
+{instruction}
 {behavior_tree_format}
 {behavior_tree_descriptions}
 """

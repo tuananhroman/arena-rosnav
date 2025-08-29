@@ -12,6 +12,9 @@ from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
 from ament_index_python.packages import get_package_share_directory
 from task_generator.tasks.obstacles.prompt_utils import ARENA_CONTEXT, BEHAVIOR_TREE_CONTEXT, LOCAL_LM, REMOTE_LM, Root
 import pprint
+import tempfile
+import xml.etree.ElementTree as ET
+from typing import Dict
 
 
 @attrs.define()
@@ -68,6 +71,69 @@ class TM_Prompt(TM_Obstacles):
             parsed["zones"].append(parsed_zone)
 
         return json.dumps(parsed, indent=2)
+    
+
+
+    def llm_bt_output_to_config(self, llm_output: Dict)-> Dict:
+        try:
+            config = {
+                "obstacles": {
+                    "static": [],
+                    "dynamic": []
+                }
+            }
+
+            tmp_dir = tempfile.TemporaryDirectory()
+            for id, hunav in enumerate(llm_output.get("hunav_agents")):
+                hunav: Dict
+
+                hunav_config = {
+                    "id": id,
+                    "name": hunav.get("name"),
+                    "pos": hunav.get("pos"),
+                    "model": hunav.get("model"),
+                    "waypoints": hunav.get("waypoints")
+                }
+
+                bt_root: Dict = hunav.get("bt_root")
+                behavior_tree_xml = Root.model_validate_json(json.dumps(bt_root)).to_xml()
+                
+                with tempfile.NamedTemporaryFile(
+                    mode='w+t', 
+                    suffix='.xml',
+                    dir=tmp_dir.name,
+                    delete=False
+                ) as tmp_xml_file:
+                    hunav_config.update({
+                        "behavior_tree": os.path.join(tmp_dir.name, tmp_xml_file.name)
+                    })
+                    tmp_xml_file.write(
+                        ET.tostring(
+                            behavior_tree_xml, 
+                            encoding="UTF-8", 
+                            method='xml', 
+                            xml_declaration=True
+                        ).decode("utf-8")
+                    )
+
+                    with open(f"/home/nguyen/{id}.xml", 'w+t') as file:
+                        file.write(
+                            ET.tostring(
+                                behavior_tree_xml, 
+                                encoding="UTF-8", 
+                                method='xml', 
+                                xml_declaration=True
+                            ).decode("utf-8")
+                        )
+                
+                config["obstacles"]["dynamic"].append(hunav_config)
+                
+        except Exception as e:
+            self.node.get_logger().error(f"Failed to parse Behavior tree from LLM response: {e}")
+            self.node.get_logger().error("Returning empty config!")
+            config = {}
+
+        return config
 
 
     def _prompt_to_config(self, prompt: str, top_p: float, use_behavior_tree: bool, local: bool=False) -> dict:
@@ -163,22 +229,20 @@ class TM_Prompt(TM_Obstacles):
 
         # Parse it into a Python dict
         try:
-            config = json.loads(answer)
             if use_behavior_tree:
-                self.node.get_logger().warn("LLM answer in json format:")
-                self.node.get_logger().warn(pprint.pformat(answer, indent=2))
-                behavior_tree_xml = Root.model_validate_json(answer).to_xml()
-                self.node.get_logger().warn("LLM answer parsed to xml format:")
-                self.node.get_logger().warn(pprint.pformat(behavior_tree_xml, indent=2))
-                return behavior_tree_xml
+                with open("/home/nguyen/test_llm_output.json", "w") as file:
+                    json.dump(json.loads(answer), file)
+                config = self.llm_bt_output_to_config(json.loads(answer))
+            else:
+                config = json.loads(answer)
 
         except json.JSONDecodeError as e:
-            self.node.get_logger().error("Failed to parse JSON from LLM response:", e)
+            self.node.get_logger().error(f"Failed to parse JSON from LLM response: {e}")
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        # with open("/home/nguyen/test_llm_output.json", "w") as file:
-        #     json.dump(config, file)
+        with open("/home/nguyen/scenario.json", "w") as file:
+            json.dump(config, file)
 
         return config
 
@@ -262,7 +326,7 @@ class TM_Prompt(TM_Obstacles):
             except Exception as e:
                 raise RuntimeError(f"Error loading config from {config_path}") from e
             
-        default_hunav_config = _load_config() # Is not used yet
+        # default_hunav_config = _load_config() # Is not used yet
 
         self._config = PromptConfig(
             user_prompt=self.node.ROSParam[str](

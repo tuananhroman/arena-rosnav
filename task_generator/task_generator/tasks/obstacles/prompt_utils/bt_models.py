@@ -3,6 +3,7 @@ import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Union, Literal, Any
 from pydantic import BaseModel
 
+
 # TreeNodesModel
 # --------------
 class InputPort(BaseModel):
@@ -239,7 +240,11 @@ class Root(BaseModel):
     tree_nodes_model: TreeNodesModel
     behavior_trees: List[BehaviorTree]
     
-    def to_xml(self) -> ET.Element:
+    def to_xml(
+        self, 
+        include_ros_pkg: str = "arena_simulation_setup",
+        include_path: str = "configs/hunav/behavior_trees/BTRegularNav.xml"
+    ) -> ET.Element:
         element = ET.Element(
             "root",
             attrib={
@@ -249,6 +254,16 @@ class Root(BaseModel):
         )
 
         element.append(self.tree_nodes_model.to_xml())
+
+        element.append(
+            ET.Element(
+                "include",
+                attrib={
+                    "ros_pkg": include_ros_pkg,
+                    "path": include_path
+                }
+            )
+        )
 
         for behavior_tree in self.behavior_trees:
             element.append(behavior_tree.to_xml())
