@@ -52,30 +52,90 @@ agent_cfg:
 
   # reward function configuration
   reward:
-    reward_function_dict: 
-      goal_reached:
-        reward: 20  # Positive reward for reaching the goal
+    # reward_function_dict: 
+    #   goal_reached:
+    #     reward: 20  # Positive reward for reaching the goal
+    #     _follow_subgoal: true
 
-      factored_safe_distance:
-        factor: -0.2  # Penalty factor for getting too close to obstacles
+    #   factored_safe_distance:
+    #     factor: -0.2  # Penalty factor for getting too close to obstacles
 
-      collision:
-        reward: -15  # Negative reward for colliding with obstacles
+    #   collision:
+    #     reward: -15  # Negative reward for colliding with obstacles
 
-      approach_goal:
-        pos_factor: 0.3  # Reward factor for moving toward the goal
-        neg_factor: 0.4  # Penalty factor for moving away from the goal
-        _goal_update_threshold: 0.25  # Threshold to update the goal reference point
-        _follow_subgoal: true  # Whether to follow subgoals along the global path
-        _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
+    #   approach_goal:
+    #     pos_factor: 0.3  # Reward factor for moving toward the goal
+    #     neg_factor: 0.4  # Penalty factor for moving away from the goal
+    #     _goal_update_threshold: 0.25  # Threshold to update the goal reference point
+    #     _follow_subgoal: true  # Whether to follow subgoals along the global path
+    #     _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
 
-      factored_reverse_drive:
-        factor: 0.05  # Penalty factor for driving in reverse
-        threshold: 0.0  # Threshold below which reverse motion is penalized
-        _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
+    #   factored_reverse_drive:
+    #     factor: 0.05  # Penalty factor for driving in reverse
+    #     threshold: 0.0  # Threshold below which reverse motion is penalized
+    #     _on_safe_dist_violation: true  # Apply this reward component when safety distance is violated
 
     reward_unit_kwargs: null  # Additional arguments for reward units
-    verbose: false # Print detailed reward values during training
+    verbose: 1
+
+
+    # Comprehensive test configuration for most reward units
+    reward_function_dict:
+      goal_reached:
+        reward: 20
+        _follow_subgoal: true
+      safe_distance:
+        reward: -0.1
+      factored_safe_distance:
+        factor: -0.2
+      no_movement:
+        reward: -0.1
+      approach_goal:
+        pos_factor: 0.3
+        neg_factor: 0.4
+        _goal_update_threshold: 0.25
+        _follow_subgoal: true
+        _on_safe_dist_violation: true
+      collision:
+        reward: -15
+      distance_travelled:
+        consumption_factor: 0.01
+        lin_vel_scalar: 1.0
+        ang_vel_scalar: 0.5
+      reverse_drive:
+        reward: -0.1
+        threshold: 0.0
+        _on_safe_dist_violation: true
+      factored_reverse_drive:
+        factor: -0.05
+        threshold: 0.0
+        _on_safe_dist_violation: true
+      abrupt_velocity_change:
+        vel_factors: {0: 1.0, 1: 1.0, 2: 1.0}
+        _on_safe_dist_violation: true
+      root_velocity_difference:
+        k: 0.5
+        _on_safe_dist_violation: true
+      two_factor_velocity_difference:
+        alpha: 0.5
+        beta: 0.5
+        _on_safe_dist_violation: true
+      active_heading_direction:
+        reward: 0.1
+      ped_type_safety_distance:
+        reward: -0.1
+      ped_type_factored_safety_distance:
+        factor: -0.2
+      ped_type_collision:
+        reward: -10
+      ped_type_vel_constraint:
+        reward: -0.1
+      angular_vel_constraint:
+        reward: -0.1
+      max_steps_exceeded:
+        reward: -5
+      linear_vel_boost:
+        reward: 0.1
 
 # CONTAINS THE FRAMEWORK CONFIGURATION FOR TRAINING 
 arena_cfg:
@@ -88,7 +148,7 @@ arena_cfg:
     max_num_moves_per_eps: 200  # Maximum number of steps per episode before termination
     n_envs: 1  # Number of parallel environments for training
     n_timesteps: 4000000  # Total number of timesteps to train for
-    no_gpu: false  # Set to true to force CPU training even if GPU is available
+    no_gpu: true  # Set to true to force CPU training even if GPU is available
     safety_distance: 1.0  # Minimum distance to maintain from obstacles for safety
     show_progress_bar: false  # Display progress bar during training
 
@@ -98,42 +158,50 @@ arena_cfg:
     tm_obstacles: random  # Obstacle generation method (random placement)
     tm_robots: random  # Robot spawning method (random positions)
 
-    curriculum_definition:
-      # Stage 1: Empty environment - basic navigation
-      - n_static_obstacles: [0, 0]
-        n_interactive_obstacles: [0, 0]
-        n_dynamic_obstacles: [0, 0]
-        models_static_obstacles: []
-        models_interactive_obstacles: []
-        models_dynamic_obstacles: []
-        goal_radius: 1.5
-        
-      # Stage 2: Few static obstacles
-      - n_static_obstacles: [2, 4]
-        n_interactive_obstacles: [0, 0]
-        n_dynamic_obstacles: [0, 0]
-        models_static_obstacles: [chair, table]
-        models_interactive_obstacles: []
-        models_dynamic_obstacles: []
-        goal_radius: 1.2
-        
-      # Stage 3: More static obstacles + first dynamic
-      - n_static_obstacles: [3, 5]
-        n_interactive_obstacles: [0, 0]
-        n_dynamic_obstacles: [1, 2]
-        models_static_obstacles: [chair, table, shelf]
-        models_interactive_obstacles: []
-        models_dynamic_obstacles: [actor1]
-        goal_radius: 1.0
-        
-      # Stage 4: Introduce interactive obstacles
-      - n_static_obstacles: [4, 6]
-        n_interactive_obstacles: [1, 2]
-        n_dynamic_obstacles: [2, 3]
-        models_static_obstacles: [chair, table, shelf, plant]
-        models_interactive_obstacles: [door]
-        models_dynamic_obstacles: [actor1]
-        goal_radius: 0.8
+    staged:
+      starting_stage: 1
+      threshold_type: succ  # Metric to use: "succ" (success rate) or "rew" (reward)
+      upper_threshold: 0.9  # Performance threshold to advance to next stage
+      lower_threshold: 0.3  # Performance threshold to stay at current stage
+
+      parameter_node_template: "/task_generator_node"  # Template for task generator node name
+      timeout: 5.0  # Timeout for ROS2 parameter service calls (seconds)
+      curriculum_definition:
+        # Stage 1: No obstacles (safe start)
+        - task.random.static.n: [0, 0]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [0, 0]
+          task.random.static.models: []
+          task.random.interactive.models: []
+          task.random.dynamic.models: []
+          goal_tolerance_radius: 1.5
+          
+        # Stage 2: Few static obstacles
+        - task.random.static.n: [2, 4]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [0, 0]
+          task.random.static.models: [chair, table]
+          task.random.interactive.models: []
+          task.random.dynamic.models: []
+          goal_tolerance_radius: 1.2
+          
+        # Stage 3: More static obstacles + first dynamic
+        - task.random.static.n: [3, 5]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [1, 2]
+          task.random.static.models: [chair, table, shelf]
+          task.random.interactive.models: []
+          task.random.dynamic.models: [actor1]
+          goal_tolerance_radius: 1.0
+          
+        # Stage 4: Introduce interactive obstacles
+        - task.random.static.n: [4, 6]
+          task.random.interactive.n: [1, 2]
+          task.random.dynamic.n: [2, 3]
+          task.random.static.models: [chair, table, shelf, plant]
+          task.random.interactive.models: [door]
+          task.random.dynamic.models: [actor1]
+          goal_tolerance_radius: 0.8
 
   monitoring:
     wandb: # Weights and Biases logging configuration
@@ -156,11 +224,5 @@ arena_cfg:
       threshold: 0.9  # Performance threshold to stop training
       threshold_type: succ  # Metric to use: "succ" (success rate) or "rew" (reward)
       verbose: 1  # Verbosity of logging when checking threshold
-    training_curriculum:
-      current_stage: 0  # Starting curriculum stage (0-indexed)
-      curriculum_file: semantic.yaml  # File defining curriculum stages
-      lower_threshold: 0.3  # Performance threshold to stay at current stage
-      threshold_type: succ  # Metric to use: "succ" (success rate) or "rew" (reward)
-      upper_threshold: 0.9  # Performance threshold to advance to next stage
 
   profiling: null  # Performance profiling configuration (null for disabled)

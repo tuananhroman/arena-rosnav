@@ -16,7 +16,6 @@ from rl_utils.trainer.arena_trainer import (
     SupportedRLFrameworks,
     TrainingHookStages,
 )
-from rl_utils.utils.dynamic_reconfigure import set_dynamic_reconfigure_parameter
 
 
 @dataclass
@@ -82,26 +81,6 @@ class StableBaselines3Trainer(ArenaTrainer):
 
         The hooks are executed at specific stages during the training process.
         """
-        TASK_GEN_SERVER_NODE = "task_generator_server"
-        CURRICULUM_PARAM = "STAGED_curriculum"
-        CURRICULUM_INDEX_PARAM = "STAGED_index"
-
-        curriculum_file = (
-            self.config.arena_cfg.callbacks.training_curriculum.curriculum_file
-        )
-        current_stage = (
-            self.config.arena_cfg.callbacks.training_curriculum.curriculum_file
-        )
-
-        def _set_curriculum_file(_):
-            return set_dynamic_reconfigure_parameter(
-                TASK_GEN_SERVER_NODE, CURRICULUM_PARAM, curriculum_file
-            )
-
-        def _set_curriculum_stage(_):
-            return set_dynamic_reconfigure_parameter(
-                TASK_GEN_SERVER_NODE, CURRICULUM_INDEX_PARAM, current_stage
-            )
 
         def _transfer_weights(_):
             transfer_cfg = self.config.agent_cfg.framework.algorithm.transfer_weights
@@ -113,10 +92,6 @@ class StableBaselines3Trainer(ArenaTrainer):
                     exclude=transfer_cfg.exclude,
                 )
 
-        self.hook_manager.register(
-            TrainingHookStages.BEFORE_SETUP,
-            [_set_curriculum_file, _set_curriculum_stage],
-        )
         self.hook_manager.register(
             TrainingHookStages.AFTER_SETUP,
             [_transfer_weights],
@@ -212,6 +187,7 @@ class StableBaselines3Trainer(ArenaTrainer):
             n_envs=self.config.arena_cfg.general.n_envs,
             tm_modules=self.config.arena_cfg.task.tm_modules,
             callback_cfg=self.config.arena_cfg.callbacks,
+            task_cfg=self.config.arena_cfg.task,
             model_save_path=self.paths[Paths.Agent].path,
             eval_log_path=self.paths[Paths.AgentEval].path,
             debug_mode=self.config.arena_cfg.general.debug_mode,
