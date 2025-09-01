@@ -9,8 +9,7 @@ LOCAL_LM = "Qwen/Qwen3-0.6B"
 REMOTE_LM = "gemini-2.5-flash"
 CHROMA_DB_PATH = os.path.join(
     get_package_share_directory("task_generator"), 
-    "share", 
-    "task_generator",
+    "prompt_utils",
     "chroma"
 )
 BT_REF_DOC_PATH = os.path.join(
