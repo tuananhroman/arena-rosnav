@@ -1,5 +1,20 @@
 instruction = "You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map."
 
+# Arena world information format
+# ------------------------------
+world_information = """
+    The world information is provided in this JSON-formated data as described below: The map is composed of a list of zones. Each zone has the following fields:
+    - `name`: a unique identifier.
+    - `corners`: a list of 2D points [x, y] marking the zone's corners, you can calculate the zone's position and coverage, and check if a point is within a zone or not base on these points.
+    - `walls`: a list of wall segments, each defined by two 2D points [[x1, y1], [x2, y2]].
+    - `mat`: the material of the floor (can be empty).
+    - `entities`: contains static objects in the zone. Each static object has:
+    -   - `name`: the object's unique name.
+    -   - `model`: the type of object (e.g., `shelf`).
+    -   - `pose`: a list [x, y, z] representing the object's position.
+    - `description`: a human-readable name of the zone.
+"""
+
 # Arena format
 # ------------
 arena_format = """
@@ -9,12 +24,103 @@ arena_format = """
         "static": [],
         "dynamic": [
             {
-                "name": "1",
-                "pos": [24.0, 2.0, 0],
-                "type": "adult",
+                "name": <agent name>,
                 "model": "gazebo_actor",
-                "waypoints": [[27.1, 7.0, 0], [17.7, 7.0, 0]],
-                "waypoint_mode": 1
+                "pos": [
+                    <x>,
+                    <y>,
+                    0
+                ],
+                "type": <agent type>,
+                "model": <agent model>,
+                "waypoints": [
+                    [
+                        <x1>,
+                        <y1>,
+                        0
+                    ],
+                    ...,
+
+                    [
+                        <xn>,
+                        <yn>,
+                        0
+                    ]
+                ],
+                "waypoint_mode": <mode>,
+            }
+        ]
+    }
+    ```
+
+    This is an example:
+    ```json
+    "obstacles": {
+        "static": [],
+        "dynamic": [
+            {
+                "name": "20",
+                "id": 0,
+                "pos": [21.02, 16.89],
+                "type": "gazebo_actor",
+                "waypoints": [
+                [18.42, 15.03],
+                [18.42, 7.99],
+                [0.8, 10.4],
+                [1.51, 3.68],
+                [7.09, -3.0],
+                [10.53, -1.58],
+                [11.87, 6.76]
+                ],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "23",
+                "id": 0,
+                "pos": [1.44, 8.61],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "24",
+                "id": 0,
+                "pos": [0.33, 6.78],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "25",
+                "id": 0,
+                "pos": [18.15, 11.52],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "26",
+                "id": 0,
+                "pos": [17.0, 9.9],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "27",
+                "id": 0,
+                "pos": [11.32, 2.5],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
+            },
+            {
+                "name": "28",
+                "id": 0,
+                "pos": [10.18, 0.88],
+                "type": "gazebo_actor",
+                "waypoints": [],
+                "waypoint_mode": 0
             }
         ]
     }
@@ -34,24 +140,22 @@ arena_field_descriptions = """
     - `name`: the object's unique name.
     - `pos`: a list [x, y, yaw] representing the object's position and rotation.
     - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
+    - `skin`: the skin of the dynamic obstacles, can be one of the following value:
+        - `0`: renders an elegant man,
+        - `1`: renders a casual man,
+        - `2`: renders a elegant woman,
+        - `3`: renders a regular man,
+        - `4`: renders a worker man,
+        - `5`: renders a walk person
+    - `group_id` (): the unique id of a group that the dynamic obstacles is in, `-1` means the obstacles doesn't belong to any group.
     - `model`: the type of model used for the dynamic obstacle (e.g., `gazebo_actor`).
     - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, 0], [x2, y2, 0], ...].
+    - `cyclic_goals`: whether the dynamic obstacles continue to follow the waypoints repeatedly, can be `true` or `false`.
     - `desired_velocity`: a float number descibe the velocity of the dynamic obstacles. This value ranges from [0, 3.5], where [0, 0.3] is stationary, (0.3, 1.0] is idling, (1.0, 2.0] is normal walking and (2.0, 3.5] is running.
 
     The `waypoints` of dynamic obstacles must satisfy the following constraints:
     - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
     - The waypoints must be valid positions on the map, avoiding walls and obstacles.
-
-    The world information is provided in this JSON-formated data as described below: The map is composed of a list of zones. Each zone has the following fields:
-    - `name`: a unique identifier.
-    - `corners`: a list of 2D points [x, y] marking the zone's corners, you can calculate the zone's position and coverage, and check if a point is within a zone or not base on these points.
-    - `walls`: a list of wall segments, each defined by two 2D points [[x1, y1], [x2, y2]].
-    - `mat`: the material of the floor (can be empty).
-    - `entities`: contains static objects in the zone. Each static object has:
-    -   - `name`: the object's unique name.
-    -   - `model`: the type of object (e.g., `shelf`).
-    -   - `pose`: a list [x, y, z] representing the object's position.
-    - `description`: a human-readable name of the zone.
 """
 
 # Behavior tree format
@@ -129,6 +233,7 @@ behavior_tree_format = """
         ]
     }
     ```
+
     This is an example:
     ```json
     {
@@ -362,27 +467,18 @@ behavior_tree_descriptions = """
     - "SubTree": references another BT by its ID, with parameters passed as attributes.
     Attributes placeholders:
     - Attributes may use placeholders in {} (e.g., {id}, {dt}) which are dynamically substituted with the agent's values during execution.
-
-    The world information is provided in this JSON-formated data as described below: The map is composed of a list of zones. Each zone has the following fields:
-    - `name`: a unique identifier.
-    - `corners`: a list of 2D points [x, y] marking the zone's corners, you can calculate the zone's position and coverage, and check if a point is within a zone or not base on these points.
-    - `walls`: a list of wall segments, each defined by two 2D points [[x1, y1], [x2, y2]].
-    - `mat`: the material of the floor (can be empty).
-    - `entities`: contains static objects in the zone. Each static object has:
-    -   - `name`: the object's unique name.
-    -   - `model`: the type of object (e.g., `shelf`).
-    -   - `pose`: a list [x, y, z] representing the object's position.
-    - `description`: a human-readable name of the zone.
 """
 
 ARENA_CONTEXT = f"""
 {instruction}
 {arena_format}
 {arena_field_descriptions}
+{world_information}
 """ 
 
 BEHAVIOR_TREE_CONTEXT = f"""
 {instruction}
 {behavior_tree_format}
 {behavior_tree_descriptions}
+{world_information}
 """

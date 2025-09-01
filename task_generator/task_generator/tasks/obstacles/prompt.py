@@ -7,10 +7,11 @@ import json
 import itertools
 import time
 import yaml
-from openai import OpenAI
+from google import genai
+import chromadb
 from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
 from ament_index_python.packages import get_package_share_directory
-from task_generator.tasks.obstacles.prompt_utils import ARENA_CONTEXT, BEHAVIOR_TREE_CONTEXT, LOCAL_LM, REMOTE_LM, Root
+from task_generator.tasks.obstacles.prompt_utils import ARENA_CONTEXT, BEHAVIOR_TREE_CONTEXT, LOCAL_LM, REMOTE_LM, CHROMA_DB_PATH, BT_REF_DOC_PATH, Root, process_json_doc, create_chroma_db, get_chroma_collection, get_relevant_bt_nodes
 import pprint
 import tempfile
 import xml.etree.ElementTree as ET
@@ -71,7 +72,6 @@ class TM_Prompt(TM_Obstacles):
             parsed["zones"].append(parsed_zone)
 
         return json.dumps(parsed, indent=2)
-    
 
 
     def llm_bt_output_to_config(self, llm_output: Dict)-> Dict:
@@ -134,6 +134,20 @@ class TM_Prompt(TM_Obstacles):
             config = {}
 
         return config
+    
+
+    def setup_chroma(self):
+        if os.path.isdir(CHROMA_DB_PATH):
+            self.chroma_collection = get_chroma_collection(CHROMA_DB_PATH, self.inference_client)
+        else:
+            processed_doc = process_json_doc(
+                BT_REF_DOC_PATH
+            )
+            self.chroma_collection = create_chroma_db(
+                documents=processed_doc,
+                db_path=CHROMA_DB_PATH,
+                client=self.inference_client
+            )
 
 
     def _prompt_to_config(self, prompt: str, top_p: float, use_behavior_tree: bool, local: bool=False) -> dict:
@@ -143,28 +157,47 @@ class TM_Prompt(TM_Obstacles):
 
         world_info = self.preprocess_world_description(world_description)
 
+        messages = []
+
         if use_behavior_tree:
-            messages = [
-                {
-                    "role": "system",
-                    "content": f"{BEHAVIOR_TREE_CONTEXT}. Generate data base on this world data as below: {world_info}"
-                },
-                {
-                    "role": "user", 
-                    "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON using the format above,  with no explanation, thoughts, or extra text."
-                }
-            ]
+            self.setup_chroma()
+
+            if "bt" not in self.cached_context.keys(): # system context is not cached (due to initialization)
+                cache = self.inference_client.caches.create(
+                    model=REMOTE_LM,
+                    config=genai.types.CreateCachedContentConfig(
+                        display_name="bt-context",
+                        system_instruction="You always stick to the facts in the sources provided, and never make up new facts. Now look at these provided materials, and answer the following questions.",
+                        contents=BEHAVIOR_TREE_CONTEXT
+                    )
+                )
+                self.cached_context.update({"bt": cache.name})
+                
+            bt_nodes = get_relevant_bt_nodes(
+                query=f"What are the nodes should be used for creating the behavior tree as described below: \"{prompt}\"",
+                collection=self.chroma_collection,
+            )
+
+            messages.append(
+                f"Generate hunav agents data for a simulation base on this world data as below: {world_info}, where: {prompt}. Use these behavior tree nodes only: {bt_nodes}. Only return valid JSON using the format declared in the system context, with no explanation, thoughts, or extra text."
+            )
+
         else:
-            messages = [
-                {
-                    "role": "system",
-                    "content": f"{ARENA_CONTEXT}. Generate data base on this world data as below: {world_info}"
-                },
-                {
-                    "role": "user", 
-                    "content": f"Generate pedestrian waypoints for a simulation where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format above,  with no explanation, thoughts, or extra text."
-                }
-            ]
+            if "arena" not in self.cached_context.keys(): # system context is not cached (due to initialization)
+                cache = self.inference_client.caches.create(
+                    model=REMOTE_LM,
+                    config=genai.types.CreateCachedContentConfig(
+                        display_name="arena-context",
+                        system_instruction="You always stick to the facts in the sources provided, and never make up new facts. Now look at these provided materials, and answer the following questions.",
+                        contents=ARENA_CONTEXT
+                    )
+                )
+                self.cached_context.update({"arena": cache.name})
+
+            messages.append(
+                f"Generate pedestrian waypoints for a simulation base on this world data as below: {world_info}, where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format declared in the system context, with no explanation, thoughts, or extra text."
+            )
+        
         if local: # Currently not supported
             return {}
             from huggingface_hub import InferenceClient
@@ -200,25 +233,22 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().info(f"Inference done, took: {end-start:.1f}s")
 
         else:
-            if "GEMINI_API_KEY" not in os.environ:
-                self.node.get_logger().error("GEMINI_API_KEY environment variable not set!")
-                self.node.get_logger().error("Returning empty config!")
-                return {}
-            
-            self.inference_client = OpenAI(
-                api_key=os.environ["GEMINI_API_KEY"],
-                base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-            )
             self.node.get_logger().warn("Start inference...")
             start = time.time()
-            response = self.inference_client.chat.completions.create(
+            response = self.inference_client.models.generate_content(
                 model=REMOTE_LM,
-                messages=messages,
-                top_p=top_p,
-                stream=False,
+                contents=messages,
+                config=genai.types.GenerateContentConfig(
+                    cached_content=self.cached_context["bt"] if use_behavior_tree else self.cached_context["arena"],
+                    top_p=top_p,
+                    thinking_config=genai.types.ThinkingConfig(
+                        include_thoughts=False,
+                        thinking_budget=0
+                    ),
+                )
             )
 
-            answer = response.choices[0].message.content
+            answer = response.text
             end = time.time()
             self.node.get_logger().warn(f"Inference done, took: {end-start:.1f}s")
 
@@ -345,3 +375,15 @@ class TM_Prompt(TM_Obstacles):
                 parse=lambda use: use
             )
         )
+
+
+        if "GEMINI_API_KEY" not in os.environ:
+                self.node.get_logger().error("GEMINI_API_KEY environment variable not set!")
+                self.node.get_logger().error("Returning empty config!")
+                return {}
+        
+        self.inference_client = genai.Client(
+            api_key=os.environ["GEMINI_API_KEY"]
+        )
+
+        self.cached_context: Dict[str, str] = {}  # Whether the prompt context need to be changed and fed into LLM model 
