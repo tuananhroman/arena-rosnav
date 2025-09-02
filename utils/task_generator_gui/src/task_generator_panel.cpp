@@ -100,7 +100,6 @@ namespace task_generator_gui
         world_combobox->setCurrentText(QString::fromStdString(selected_world));
         connect(world_combobox, &QComboBox::currentTextChanged, this, &TaskGeneratorPanel::onWorldChanged);
 
-
         setupTabs(this->root_layout);
 
         reset_scenario_button = new QPushButton("Reset Task");
@@ -139,7 +138,7 @@ namespace task_generator_gui
 
         obstacles_task_mode_combobox = setupComboBoxWithLabel(
             obstacles_tab_layout,
-            QStringList({"Environment", "Parametrized", "Random", "Scenario"}),
+            QStringList({"Environment", "Parametrized", "Random", "Scenario", "Prompt"}),
             QString("Obstacles Task Mode"));
         connect(
             obstacles_task_mode_combobox,
@@ -199,6 +198,7 @@ namespace task_generator_gui
 
     void TaskGeneratorPanel::onRobotChanged(const QString &text)
     {
+        Q_UNUSED(text);
     }
 
     void TaskGeneratorPanel::onWorldChanged(const QString &text)
@@ -294,6 +294,25 @@ namespace task_generator_gui
             obstacles_tree->setItemWidget(item, 1, param_config_file_combobox);
             connect(param_config_file_combobox, &QComboBox::currentTextChanged, this, [this](const QString &text)
                     { selected_scenario_config_file = text.toStdString(); });
+        }
+
+        else if (obstacles_task_mode == "Prompt")
+        {
+            auto prompt_text_edit = new QTextEdit();
+            prompt_text_edit->setPlaceholderText("Type your prompt here");
+            prompt_text_edit->setMinimumHeight(50);
+            prompt_text_edit->setWordWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+            prompt_text_edit->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
+            // prompt_text_edit->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+            prompt_text_edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+            prompt_text_edit->setLineWrapColumnOrWidth(1);
+            prompt_text_edit->setLineWrapMode(QTextEdit::LineWrapMode::WidgetWidth);
+            RCLCPP_INFO(node->get_logger(), "Line wrap mode: %d", prompt_text_edit->lineWrapMode());
+            auto item = new QTreeWidgetItem(obstacles_tree);
+            item->setText(0, "Prompt");
+            obstacles_tree->setItemWidget(item, 1, prompt_text_edit);
+            connect(prompt_text_edit, &QTextEdit::textChanged, this, [this, prompt_text_edit]()
+                    { typed_prompt = prompt_text_edit->toPlainText().toStdString(); });
         }
     }
 

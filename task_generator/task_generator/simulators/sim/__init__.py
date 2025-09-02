@@ -1,87 +1,70 @@
-from collections.abc import Collection
+from __future__ import annotations
+
+import abc
 import itertools
 import typing
+from collections.abc import Collection
 
 from arena_rclpy_mixins.shared import Namespace
 
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.shared import Entity, ModelType, Pose, Wall, Floor
+from task_generator.shared import Door, Entity, Floor, ModelType, Pose, Wall
 from task_generator.utils.registry import Registry
 
+from ._interface import ObstacleITF, PedestrianITF, RobotITF
 
-class BaseSim(NodeInterface):
+
+class BaseSim(NodeInterface, ObstacleITF, PedestrianITF, RobotITF, abc.ABC):
 
     _namespace: Namespace
 
-    _spawn_model: dict[ModelType, typing.Callable]
-
-    __counter: itertools.count
-
     def __init__(self, namespace: Namespace):
         NodeInterface.__init__(self)
-
         self._namespace = namespace
-        self._spawn_model = dict()
 
-        self.__counter = itertools.count()
-
-    def generate_random_name(self) -> str:
-        return f"random_name_{next(self.__counter)}"
-
-    @property
-    def MODEL_TYPES(self) -> Collection[ModelType]:
-        return self._spawn_model.keys()
-
-    def spawn_model(self, model_type: ModelType, *args, **kwargs):
-        if model_type in self._spawn_model:
-            return self._spawn_model[model_type](*args, **kwargs)
-
-        raise NotImplementedError(
-            f"{type(self).__name__} does not implement spawn_model[{model_type}]")
-
-    def before_reset_task(self):
+    @abc.abstractmethod
+    def before_reset_task(self) -> bool:
         """
         Is executed each time before the task is reset. This is useful in
         order to pause the simulation.
         """
         raise NotImplementedError()
 
-    def after_reset_task(self):
+    @abc.abstractmethod
+    def after_reset_task(self) -> bool:
         """
         Is executed after the task is reset. This is useful to unpause the
         simulation.
         """
         raise NotImplementedError()
 
-    def spawn_entity(self, entity: Entity) -> bool:
-        raise NotImplementedError()
-
-    def move_entity(self, name: str, pose: Pose) -> bool:
-        """
-        Move entity to the given position.
-        """
-        raise NotImplementedError()
-
-    def delete_entity(self, name: str) -> bool:
-        raise NotImplementedError()
-
+    @abc.abstractmethod
     def spawn_walls(self, walls: list[Wall]) -> bool:
         """
         Add a list of walls to the simulator.
         """
         raise NotImplementedError()
-    def spawn_floors(self,floors: list[Floor]) -> bool:
+
+    @abc.abstractmethod
+    def spawn_floors(self, floors: list[Floor]) -> bool:
         """
         Add a list of floors to the simulator.
         """
         raise NotImplementedError()
 
-    def remove_walls(self) -> bool:
+    @abc.abstractmethod
+    def spawn_doors(self, doors: list[Door]) -> bool:
         """
-        Remove every spawned wall from the simulator.
+        Add a list of doors to the simulator.
         """
-        raise NotImplementedError()
+        return True
+
+    def remove_walls_doors(self) -> bool:
+        """
+        Remove every spawned wall and door from the simulator.
+        """
+        return True
 
 
 SimulatorRegistry = Registry[Constants.SimSimulator, BaseSim]()
@@ -105,10 +88,10 @@ def lazy_gazebo():
     return GazeboSimulator
 
 
-@SimulatorRegistry.register(Constants.SimSimulator.UNITY)
-def lazy_unity():
-    from .unity_simulator import UnitySimulator
-    return UnitySimulator
+# @SimulatorRegistry.register(Constants.SimSimulator.UNITY)
+# def lazy_unity():
+#     from .unity_simulator import UnitySimulator
+#     return UnitySimulator
 
 
 @SimulatorRegistry.register(Constants.SimSimulator.ISAAC)

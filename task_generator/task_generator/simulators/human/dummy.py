@@ -28,21 +28,26 @@ class DummyHumanSimulator(BaseHumanSimulator):
     ) -> bool:
         return True
 
-    def _spawn_robot_impl(
+    def _spawn_doors_impl(
         self,
-        robot,
+        doors,
     ) -> bool:
         return True
+
+    def _spawn_robot_impl(
+        self,
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)
 
     def _remove_robot_impl(
         self,
-        name,
-    ) -> bool:
-        return True
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)
 
     def _move_robot_impl(
         self,
-        name,
-        pose,
-    ) -> bool:
-        return True
+        robots,
+    ) -> Sequence[bool]:
+        return (True,) * len(robots)

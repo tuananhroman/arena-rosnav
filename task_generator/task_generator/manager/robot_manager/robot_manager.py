@@ -92,7 +92,7 @@ class RobotManager(NodeInterface):
             self._goal_tolerance_distance = 1.0
             self._goal_tolerance_angle = 0.523599
             self._safety_distance = 0.25
-            print(f"Warning: Using default values for robot parameters: {e}")
+            self._logger.warn(f"Using default values for robot parameters: {e}")
 
         self._robot = robot
         self._robot.extra.setdefault('namespace', self.namespace)
@@ -128,7 +128,7 @@ class RobotManager(NodeInterface):
             ),
         )
         self._robot.pose.position.z += self._config.model_params.z_offset
-        self._robot = self._environment_manager.spawn_robot(self._robot)
+        self._robot = self._environment_manager.spawn_robot((self._robot,))[0]
 
         _gen_goal_topic = self.namespace("goal_pose")
 
@@ -191,7 +191,8 @@ class RobotManager(NodeInterface):
 
     def move_robot_to_pos(self, pose: Pose):
         pose.position.z += self._config.model_params.z_offset
-        self._entity_manager.move_robot(name=self.name, pose=pose)
+        self.robot.pose = pose
+        self._entity_manager.move_robot((self.robot,))
         import time
         time.sleep(0.001)  # wait for the robot to move
         self._clear_local_costmap(-1)

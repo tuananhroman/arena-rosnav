@@ -8,7 +8,9 @@ import attrs
 import rclpy
 import rclpy.node
 from arena_simulation_setup.shared import Robot as Robot_
-from arena_simulation_setup.shared import DynamicObstacle, Entity, Obstacle, Wall, Floor  # noqa
+from arena_simulation_setup.utils.cattrs import register_parse
+
+from arena_simulation_setup.shared import DynamicObstacle, CustomDynamicObstacle, Entity, Obstacle, Wall, Floor, Door  # noqa
 from arena_simulation_setup.utils.geometry import (Orientation, Pose, Position, PositionRadius)  # noqa
 from arena_simulation_setup.utils.models import (Model, ModelType, ModelWrapper)  # noqa
 
@@ -43,6 +45,7 @@ def rosparam_set(
     return _node.rosparam.set(param_name, value)
 
 
+@register_parse
 @attrs.define
 class Robot(Robot_):
     inter_planner: str
@@ -67,21 +70,21 @@ class Robot(Robot_):
         return Namespace(self.name)
 
     @classmethod
-    def parse(cls, obj: dict) -> "Robot":
-        name = str(obj.get("name", ""))
-        pose = Pose.parse(obj.get("pos", (0, 0, 0)))
+    def parse(cls, value: dict) -> "Robot":
+        name = str(value.get("name", ""))
+        pose = Pose(value.get("pos", (0, 0, 0)))
         inter_planner = str(
-            obj.get("inter_planner", rosparam_get(str, "inter_planner", ""))
+            value.get("inter_planner", rosparam_get(str, "inter_planner", ""))
         )
         local_planner = str(
-            obj.get("local_planner", rosparam_get(str, "local_planner", ""))
+            value.get("local_planner", rosparam_get(str, "local_planner", ""))
         )
         global_planner = str(
-            obj.get("global_planner", rosparam_get(str, "global_planner", ""))
+            value.get("global_planner", rosparam_get(str, "global_planner", ""))
         )
-        model = str(obj.get("model", rosparam_get(str, "model", "")))
-        agent = str(obj.get("agent", rosparam_get(str, "agent_name", "")))
-        record_data = obj.get(
+        model = str(value.get("model", rosparam_get(str, "model", "")))
+        agent = str(value.get("agent", rosparam_get(str, "agent_name", "")))
+        record_data = value.get(
             "record_data_dir", rosparam_get(str, "record_data_dir", None)
         )
 
@@ -94,5 +97,5 @@ class Robot(Robot_):
             model=model,
             agent=agent,
             record_data_dir=record_data,
-            extra=obj,
+            extra=value,
         )
