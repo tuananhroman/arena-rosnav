@@ -71,13 +71,14 @@ class WorldManager(NodeInterface):
         self._map = world_map
 
         if not list(world_description.all_walls):
-            world_description.zones.append(
-                WorldDescription.Zone(
-                    name='detected_walls',
-                    corners=[],
-                    walls=list(self.detected_walls),
-                )
-            )
+            pass
+            # world_description.zones.append(
+            #     WorldDescription.Zone(
+            #         name='detected_walls',
+            #         corners=[],
+            #         walls=list(self.detected_walls),
+            #     )
+            # )
 
         counter = itertools.count(0)
         for entity in itertools.chain(world_description.all_static_entities, world_description.all_dynamic_entities):

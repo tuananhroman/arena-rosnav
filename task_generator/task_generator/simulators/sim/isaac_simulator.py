@@ -89,8 +89,8 @@ class IsaacSimulator(BaseSim):
         self._logger.info(f"Initializing IsaacSimulator with namespace: {namespace}")
 
         self._init_service_clients()
-        self.wall_counter = itertools.count()
-        self.floor_counter = itertools.count()
+        self._wall_counter = itertools.count()
+        self._floor_counter = itertools.count()
         self._spawned_doors = []
         self._logger.info("Done initializing Isaac Sim")
 
@@ -203,154 +203,37 @@ class IsaacSimulator(BaseSim):
         # return True
         self._logger.debug("Attempting to spawn walls")
 
-        # self.delete_walls()
         time.sleep(0.01)
-        for i, wall in enumerate(walls):
-            try:
-                # Split wall by any doors previously spawned on this simulator
-                start = np.array([wall.start.x, wall.start.y], dtype=float)
-                end = np.array([wall.end.x, wall.end.y], dtype=float)
-                height = getattr(wall, 'height', 2.0)
+        for wall in walls:
 
-                # collect cut parameters t in [0,1]
-                cuts = [0.0, 1.0]
-                spawned_doors = getattr(self, '_spawned_doors', []) or []
+            segments, obstacles = wall.assets()
 
-                # compute door ranges (t_min, t_max) along this wall for skipping
-                door_ranges: list[tuple[float, float]] = []
+            for segment in segments:
+                material = segment.material.load()
+                wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
 
-                for door in spawned_doors:
-                    try:
-                        dstart = np.array([door.start.x, door.start.y], dtype=float)
-                        dend = np.array([door.end.x, door.end.y], dtype=float)
-                    except Exception:
-                        # door may be a simple mapping; try dict-like
-                        try:
-                            dstart = np.array(door['start'][:2], dtype=float)
-                            dend = np.array(door['end'][:2], dtype=float)
-                        except Exception:
-                            continue
-
-                    def _project_param(a, b, p):
-                        ab = b - a
-                        denom = np.dot(ab, ab)
-                        if denom <= 1e-8:
-                            return 0.0
-                        t = float(np.dot(p - a, ab) / denom)
-                        return max(0.0, min(1.0, t))
-
-                    t0 = _project_param(start, end, dstart)
-                    t1 = _project_param(start, end, dend)
-
-                    tmin, tmax = min(t0, t1), max(t0, t1)
-                    # only consider door if it overlaps the wall at all
-                    if tmax <= 0.0 or tmin >= 1.0:
-                        continue
-                    door_ranges.append((tmin, tmax))
-                    cuts.extend([tmin, tmax])
-
-                # sanitize and sort cuts
-                cuts = sorted(set([max(0.0, min(1.0, float(c))) for c in cuts]))
-
-                # debug log door ranges
-                if door_ranges:
-                    self._logger.debug(f"Wall {i}: door_ranges={door_ranges}, cuts={cuts}")
-
-                # spawn segments between successive unique cut points, skipping door intervals
-                total_len = np.linalg.norm(end - start)
-                EPS = 1e-3
-                DOOR_EPS = 1e-3
-                seg_i = 0
-                spawned_segs = 0
-                for a_t, b_t in zip(cuts[:-1], cuts[1:]):
-                    seg_len = (b_t - a_t) * total_len
-                    if seg_len < EPS:
-                        self._logger.debug(f"Wall {i}: skipping tiny segment [{a_t:.4f},{b_t:.4f}] len={seg_len}")
-                        continue
-
-                    # if this interval overlaps any door range, skip it
-                    overlaps_door = False
-                    for dr_min, dr_max in door_ranges:
-                        if not (b_t <= dr_min + DOOR_EPS or a_t >= dr_max - DOOR_EPS):
-                            overlaps_door = True
-                            break
-
-                    if overlaps_door:
-                        self._logger.debug(f"Wall {i}: skipping segment [{a_t:.4f},{b_t:.4f}] because it overlaps a door range")
-                        continue
-
-                    seg_start = start + (end - start) * a_t
-                    seg_end = start + (end - start) * b_t
-
-                    self.services.spawn_wall.client.call(
-                        SpawnWall.Request(
-                            name=self._NS_WALL(f"wall_{next(self.wall_counter)}_seg{seg_i}"),
-                            start=[float(seg_start[0]), float(seg_start[1])],
-                            end=[float(seg_end[0]), float(seg_end[1])],
-                            height=height,
-                        )
-                        )
-                current_count = next(self.wall_counter)
-                # print(f"wall {i+1}: {wall}")
-                start = [wall.start.x, wall.start.y]
-                end = [wall.end.x, wall.end.y]
-                type_ = wall.type_ 
-                z_offset = wall.z_offset
-                wall_fill_assets = wall.assets[0]
-                wall_tile_assets = wall.assets[1]
-                if wall.material != '':
-                    wall_material = wall.material
-                else:
-                    wall_material = wall.assets[2]
-                # print(wall_tile_assets)
-                future = self.services.spawn_wall.client.call(
+                self.services.spawn_wall.client.call(
                     SpawnWall.Request(
-                        name=f"wall_{current_count}/wall_{current_count}",
-                        start=start,
-                        end=end,
-                        height=wall.height,
-                        width=wall.width,
-                        material=wall_material,
-                        z_offset=z_offset
+                        name=self._NS_WALL(wall_name),
+                        start=segment.start,
+                        end=segment.end,
+                        height=segment.height,
+                        width=segment.width,
+                        material=material.url,
+                        material_name=material.material_name,
+                        z_offset=segment.start.z
                     )
                 )
-                for i, wall_tile_asset in enumerate(wall_tile_assets):
-                    model = wall_tile_asset.model.get([ModelType.USD])
-                    usd_path = os.path.abspath(model.path)
-                    response = self.services.import_obstacle.client.call(
-                        ImportObstacles.Request(
-                            name=f"wall_{current_count}/{wall_tile_asset.name}",
-                            usd_path=usd_path,
-                            pose=wall_tile_asset.pose.to_msg(),
-                            type = wall_tile_asset.type_,
-                        )
+            for obstacle in obstacles:
+                model = obstacle.model.get([ModelType.USD])
+                usd_path = model.path
+                self.services.import_obstacle.client.call(
+                    ImportObstacles.Request(
+                        name=obstacle.name,
+                        usd_path=usd_path,
+                        pose=obstacle.pose.to_msg(),
                     )
-                for i, wall_fill_asset in enumerate(wall_fill_assets):
-                    asset_start = [wall_fill_asset.start.x, wall_fill_asset.start.y]
-                    asset_end = [wall_fill_asset.end.x, wall_fill_asset.end.y]
-                    asset_z_offset = wall_fill_asset.z_offset
-                    asset_height = wall_fill_asset.height
-                    asset_width = wall_fill_asset.width
-                    asset_material = wall_fill_asset.material
-                    future = self.services.spawn_wall.client.call(
-                    SpawnWall.Request(
-                        name=f"wall_{current_count}/wall_{current_count}_asset_{i}",
-                        start=asset_start,
-                        end=asset_end,
-                        height=asset_height,
-                        width=asset_width,
-                        material=asset_material,
-                        z_offset=asset_z_offset,
-                    )
-                    )
-                seg_i += 1
-                spawned_segs += 1
-
-                self._logger.info(f"Successfully spawned wall {i+1} as {spawned_segs} segment(s)")
-
-            except Exception as e:
-                self._logger.error(str(e))
-                raise  # Re-raise exception after logging
+                )
 
         self._logger.info("All walls spawned successfully.")
         return True
@@ -361,7 +244,7 @@ class IsaacSimulator(BaseSim):
         for floor in floors:
             try:
                 pos = [floor.pos.x, floor.pos.y]
-                i = next(self.floor_counter)
+                i = next(self._floor_counter)
                 self.services.spawn_floor.client.call(
                     SpawnFloor.Request(
                         name=self._NS_FLOOR(f"floor_{i}"),
@@ -371,9 +254,9 @@ class IsaacSimulator(BaseSim):
                         material=floor.mat,
                     )
                 )
-                
+
                 self._logger.info(f"Successfully spawned floor {i+1}")
-            
+
             except Exception as e:
                 self._logger.error(str(e))
                 return False
