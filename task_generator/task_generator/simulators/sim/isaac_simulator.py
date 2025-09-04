@@ -116,10 +116,12 @@ class IsaacSimulator(BaseSim):
                             urdf_path=model.path,
                             robot_model=robot.model.name,
                             no_localization=False,
+                            tf_prefix=robot.name,
                             base_frame=robot_params.base_frame,
                             odom_frame=robot_params.odom_frame,
                             pose=robot.pose.to_msg(),
-                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel')
+                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
+                            joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
                         )
                     )
 
@@ -243,6 +245,7 @@ class IsaacSimulator(BaseSim):
         self._logger.info("Attempting to spawn floors")
         for floor in floors:
             try:
+                mat = floor.mat.load()
                 pos = [floor.pos.x, floor.pos.y]
                 i = next(self._floor_counter)
                 self.services.spawn_floor.client.call(
@@ -251,7 +254,8 @@ class IsaacSimulator(BaseSim):
                         x_length=floor.x_length,
                         y_length=floor.y_length,
                         pos=pos,
-                        material=floor.mat,
+                        material=mat.url,
+                        material_name=mat.material_name,
                     )
                 )
 
