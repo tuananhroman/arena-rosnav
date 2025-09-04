@@ -102,4 +102,4 @@ def get_relevant_bt_nodes(query:str, collection:chromadb.Collection, n_results=1
     for p in passages:
         nodes_descriptions += f'\n{p}'
     
-    return nodes_descriptions
+    return nodes_descriptions.encode("utf-8").decode("unicode_escape").strip()

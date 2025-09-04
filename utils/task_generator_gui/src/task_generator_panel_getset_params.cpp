@@ -94,7 +94,7 @@ namespace task_generator_gui
                 auto current_obstacles_tm = parameters_client->get_parameter<std::string>("tm_obstacles");
 
                 // rclcpp::SyncParametersClient::SharedPtr does not support nested parameters for has_parameter function
-                if (hasNestedParameter("task.environment.file"))
+                if (current_obstacles_tm == "environment")
                 {
                     if (init)
                         obstacles_task_mode = QString("Environment");
@@ -102,7 +102,7 @@ namespace task_generator_gui
                     auto config_file = parameters_client->get_parameter<std::string>("task.environment.file");
                     selected_environment_config_file = config_file;
                 }
-                if (hasNestedParameter("task.parametrized.file"))
+                if (current_obstacles_tm == "parametrized")
                 {
                     if (init)
                         obstacles_task_mode = QString("Parametrized");
@@ -110,7 +110,7 @@ namespace task_generator_gui
                     auto config_file = parameters_client->get_parameter<std::string>("task.parametrized.file");
                     selected_parametrized_config_file = config_file;
                 }
-                if (hasNestedParameter("task.random.static.models"))
+                if (current_obstacles_tm == "random")
                 {
                     if (init)
                         obstacles_task_mode = QString("Random");
@@ -162,7 +162,7 @@ namespace task_generator_gui
 
                     n_dynamic_obstacles_range = parameters_client->get_parameter<std::vector<int64_t>>("task.random.dynamic.n");
                 }
-                if (hasNestedParameter("task.scenario.file"))
+                if (current_obstacles_tm == "scenario")
                 {
                     if (init)
                         obstacles_task_mode = QString("Scenario");
@@ -171,7 +171,7 @@ namespace task_generator_gui
 
                     selected_scenario_config_file = config_file;
                 }
-                if (hasNestedParameter("task.prompt.user_prompt"))
+                if (current_obstacles_tm == "prompt")
                 {
                     if (init)
                         obstacles_task_mode = QString("Prompt");
@@ -490,24 +490,28 @@ namespace task_generator_gui
             parameter.name = "tm_obstacles";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
             parameter.value.string_value = "prompt";
+            RCLCPP_WARN(service_node->get_logger(), "parameter.value.string_value %s", parameter.value.string_value.c_str());
             request->parameters.push_back(parameter);
 
             parameter = rcl_interfaces::msg::Parameter();
             parameter.name = "task.prompt.user_prompt";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_STRING;
             parameter.value.string_value = typed_prompt;
+            RCLCPP_WARN(service_node->get_logger(), "typed_prompt: %s", parameter.value.string_value.c_str());
             request->parameters.push_back(parameter);
 
             parameter = rcl_interfaces::msg::Parameter();
             parameter.name = "task.prompt.behavior_tree";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_BOOL;
             parameter.value.bool_value = use_behavior_tree;
+            RCLCPP_WARN(service_node->get_logger(), "use_behavior_tree: %d", parameter.value.bool_value);
             request->parameters.push_back(parameter);
 
             parameter = rcl_interfaces::msg::Parameter();
             parameter.name = "task.prompt.top_p";
             parameter.value.type = rcl_interfaces::msg::ParameterType::PARAMETER_DOUBLE;
             parameter.value.double_value = top_p;
+            RCLCPP_WARN(service_node->get_logger(), "top_p: %lf", parameter.value.double_value);
             request->parameters.push_back(parameter);
         }
     }

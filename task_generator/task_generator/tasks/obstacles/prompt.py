@@ -143,6 +143,7 @@ class TM_Prompt(TM_Obstacles):
             processed_doc = process_json_doc(
                 BT_REF_DOC_PATH
             )
+            self.node.get_logger().info("Creating Chroma DB from Behavior Tree Nodes Reference...")
             self.chroma_collection = create_chroma_db(
                 documents=processed_doc,
                 db_path=CHROMA_DB_PATH,
@@ -178,6 +179,8 @@ class TM_Prompt(TM_Obstacles):
                 collection=self.chroma_collection,
             )
 
+            self.node.get_logger().warn(f"Choosen bt_nodes: {bt_nodes}")
+
             messages.append(
                 f"Generate hunav agents data for a simulation base on this world data as below: {world_info}, where: {prompt}. Use these behavior tree nodes only: {bt_nodes}. Only return valid JSON using the format declared in the system context, with no explanation, thoughts, or extra text."
             )
@@ -195,7 +198,7 @@ class TM_Prompt(TM_Obstacles):
                 self.cached_context.update({"arena": cache.name})
 
             messages.append(
-                f"Generate pedestrian waypoints for a simulation base on this world data as below: {world_info}, where: {prompt}. Only return valid JSON under the 'dynamic' field, using the format declared in the system context, with no explanation, thoughts, or extra text."
+                f"Generate dynamic obstacles data for a simulation where: {prompt}. Generate data base on this world data as below: {world_info}. Only return valid JSON under the 'dynamic' field, using the format declared in the system context, with no explanation, thoughts, or extra text."
             )
         
         if local: # Currently not supported
@@ -249,6 +252,8 @@ class TM_Prompt(TM_Obstacles):
             )
 
             answer = response.text
+            self.node.get_logger().warn(f"LLM raw output for the prompt: {prompt}")
+            self.node.get_logger().warn(answer)
             end = time.time()
             self.node.get_logger().warn(f"Inference done, took: {end-start:.1f}s")
 
@@ -260,8 +265,8 @@ class TM_Prompt(TM_Obstacles):
         # Parse it into a Python dict
         try:
             if use_behavior_tree:
-                with open("/home/nguyen/test_llm_output.json", "w") as file:
-                    json.dump(json.loads(answer), file)
+                # with open("/home/nguyen/test_llm_output.json", "w") as file:
+                #     json.dump(json.loads(answer), file)
                 config = self.llm_bt_output_to_config(json.loads(answer))
             else:
                 config = json.loads(answer)
@@ -271,8 +276,8 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        with open("/home/nguyen/scenario.json", "w") as file:
-            json.dump(config, file)
+        # with open("/home/nguyen/scenario.json", "w") as file:
+        #     json.dump(config, file)
 
         return config
 
@@ -335,6 +340,11 @@ class TM_Prompt(TM_Obstacles):
         #     api_key=os.environ["HF_TOKEN"],
         # )
 
+        # import debugpy
+        # debugpy.listen(("0.0.0.0", 8765))
+        # print("⏳ Waiting for debugger to attach...")
+        # debugpy.wait_for_client()
+
         def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
             """Load config from YAML file in arena_bringup configs."""
 
@@ -362,17 +372,14 @@ class TM_Prompt(TM_Obstacles):
             user_prompt=self.node.ROSParam[str](
                 self.namespace('user_prompt'),
                 value='An empty space with no pedestrian.',
-                parse=lambda prompt: prompt
             ),
             top_p=self.node.ROSParam[float](
                 self.namespace('top_p'),
                 value=0.3,
-                parse=lambda p: p
             ),
             behavior_tree=self.node.ROSParam[bool](
                 self.namespace('behavior_tree'),
                 value=False,
-                parse=lambda use: use
             )
         )
 

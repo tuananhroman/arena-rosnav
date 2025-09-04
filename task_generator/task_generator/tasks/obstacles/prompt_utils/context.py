@@ -1,4 +1,4 @@
-instruction = "You are a simulator agent that outputs only JSON-formatted data for pedestrian simulation with provided specific information about the simulation map."
+instruction = "You are a simulator agent that generate data for pedestrian simulation with specific information about the simulation map will be provided later through user prompt. You outputs only JSON-formatted data as described below."
 
 # Arena world information format
 # ------------------------------
@@ -25,7 +25,6 @@ arena_format = """
         "dynamic": [
             {
                 "name": <agent name>,
-                "model": "gazebo_actor",
                 "pos": [
                     <x>,
                     <y>,
@@ -40,7 +39,6 @@ arena_format = """
                         0
                     ],
                     ...,
-
                     [
                         <xn>,
                         <yn>,
@@ -53,7 +51,7 @@ arena_format = """
     }
     ```
 
-    This is an example:
+    Example output:
     ```json
     "obstacles": {
         "static": [],

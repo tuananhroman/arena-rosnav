@@ -94,6 +94,7 @@ namespace task_generator_gui
 
         // Node to get configs
         std::shared_ptr<rclcpp::Node> service_node;
+        service_node = std::make_shared<rclcpp::Node>("task_generator_gui_service_node");
         // namespace of taskgen node
         std::string task_generator_node;
         // Client to get list of all available environments

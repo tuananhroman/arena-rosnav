@@ -326,13 +326,13 @@ namespace task_generator_gui
             prompt_text_edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             prompt_text_edit->setLineWrapColumnOrWidth(1);
             prompt_text_edit->setLineWrapMode(QTextEdit::LineWrapMode::WidgetWidth);
-            prompt_text_edit->setText(QString::fromStdString(typed_prompt));
-            RCLCPP_INFO(node->get_logger(), "Line wrap mode: %d", prompt_text_edit->lineWrapMode());
+            // prompt_text_edit->setText(QString::fromStdString(typed_prompt));
+            connect(prompt_text_edit, &QTextEdit::textChanged, this, [this, prompt_text_edit]()
+                    { typed_prompt = prompt_text_edit->toPlainText().toStdString(); });
+
             auto prompt_widgetitem = new QTreeWidgetItem(obstacles_tree);
             prompt_widgetitem->setText(0, "Prompt");
             obstacles_tree->setItemWidget(prompt_widgetitem, 1, prompt_text_edit);
-            connect(prompt_text_edit, &QTextEdit::textChanged, this, [this, prompt_text_edit]()
-                    { typed_prompt = prompt_text_edit->toPlainText().toStdString(); });
         }
     }
 
