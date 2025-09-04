@@ -149,6 +149,17 @@
 	},
 	"launch": {
 		"version": "0.2.0",
-		"configurations": []
+		"configurations": [
+			{
+				"name": "Attach to ROS2 Python Node",
+				"type": "debugpy",
+				"request": "attach",
+				"connect": {
+					"host": "localhost",
+					"port": 8765
+				},
+				"justMyCode": false
+			}
+		]
 	}
 }
