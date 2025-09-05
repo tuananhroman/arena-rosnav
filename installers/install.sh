@@ -166,7 +166,7 @@ if [ ! -d src/deps ] ; then
     git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/pcl_msgs.git -b ros2
     git clone --filter=tree:0 --depth 1 https://github.com/rudislabs/actuator_msgs.git
     git clone --filter=tree:0 --depth 1 https://github.com/swri-robotics/gps_umd.git -b ros2-devel
-    git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_msgs.git -b ros2
+    git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_msgs.git -b humble
     git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_opencv.git -b humble
   popd
 fi
