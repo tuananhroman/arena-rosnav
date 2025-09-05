@@ -625,7 +625,6 @@ class HunavHumanSimulator(DummyHumanSimulator):
             segment.start = Point(x=wall.start.x, y=wall.start.y, z=0.0)
             segment.end = Point(x=wall.end.x, y=wall.end.y, z=0.0)
             segment.length = length
-            segment.height = wall.height
 
             self._wall_segments.append(segment)
 

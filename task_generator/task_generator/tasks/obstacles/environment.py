@@ -448,12 +448,13 @@ class TM_Environment(TM_Obstacles):
                                         Orientation.from_yaw(rot_theta)
                                     ),
                                     model=entity["model"],
+                                    type_ = "Obstacle",
                                     extra={},
                                 )
                                 static_obstacles.append(new_obstacle)
                             for g, entity in enumerate(group_dynamic_entites):
                                 ex_off, ey_off, e_theta = entity["position"]
-
+                                print(entity['model'])
                                 radians = math.radians(rotation_deg)
                                 rot_x = ex_off * math.cos(radians) - ey_off * math.sin(radians)
                                 rot_y = ex_off * math.sin(radians) + ey_off * math.cos(radians)

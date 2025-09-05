@@ -10,7 +10,7 @@ import attrs
 import numpy as np
 import rclpy
 import rclpy.client
-from isaacsim_msgs.msg import NavPed, Person
+from isaacsim_msgs.msg import NavPed, Person, Material
 from isaacsim_msgs.srv import (
     DeletePrim,
     GetPrimAttributes,
@@ -89,8 +89,8 @@ class IsaacSimulator(BaseSim):
         self._logger.info(f"Initializing IsaacSimulator with namespace: {namespace}")
 
         self._init_service_clients()
-        self.wall_counter = itertools.count()
-        self.floor_counter = itertools.count()
+        self._wall_counter = itertools.count()
+        self._floor_counter = itertools.count()
         self._spawned_doors = []
         self._logger.info("Done initializing Isaac Sim")
 
@@ -116,10 +116,12 @@ class IsaacSimulator(BaseSim):
                             urdf_path=model.path,
                             robot_model=robot.model.name,
                             no_localization=False,
+                            tf_prefix=robot.name,
                             base_frame=robot_params.base_frame,
                             odom_frame=robot_params.odom_frame,
                             pose=robot.pose.to_msg(),
-                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel')
+                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
+                            joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
                         )
                     )
 
@@ -156,7 +158,7 @@ class IsaacSimulator(BaseSim):
 
         for obstacle in obstacles:
             model = obstacle.model.get([ModelType.USD])
-            usd_path = os.path.abspath(model.path)
+            usd_path = model.path
             response = self.services.import_obstacle.client.call(
                 ImportObstacles.Request(
                     name=self._NS_OBSTACLE(obstacle.name),
@@ -203,101 +205,35 @@ class IsaacSimulator(BaseSim):
         # return True
         self._logger.debug("Attempting to spawn walls")
 
-        # self.delete_walls()
         time.sleep(0.01)
-        for i, wall in enumerate(walls):
-            try:
-                # Split wall by any doors previously spawned on this simulator
-                start = np.array([wall.start.x, wall.start.y], dtype=float)
-                end = np.array([wall.end.x, wall.end.y], dtype=float)
-                height = getattr(wall, 'height', 2.0)
+        for wall in walls:
 
-                # collect cut parameters t in [0,1]
-                cuts = [0.0, 1.0]
-                spawned_doors = getattr(self, '_spawned_doors', []) or []
+            segments, obstacles = wall.assets()
 
-                # compute door ranges (t_min, t_max) along this wall for skipping
-                door_ranges: list[tuple[float, float]] = []
+            for segment in segments:
+                wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
 
-                for door in spawned_doors:
-                    try:
-                        dstart = np.array([door.start.x, door.start.y], dtype=float)
-                        dend = np.array([door.end.x, door.end.y], dtype=float)
-                    except Exception:
-                        # door may be a simple mapping; try dict-like
-                        try:
-                            dstart = np.array(door['start'][:2], dtype=float)
-                            dend = np.array(door['end'][:2], dtype=float)
-                        except Exception:
-                            continue
-
-                    def _project_param(a, b, p):
-                        ab = b - a
-                        denom = np.dot(ab, ab)
-                        if denom <= 1e-8:
-                            return 0.0
-                        t = float(np.dot(p - a, ab) / denom)
-                        return max(0.0, min(1.0, t))
-
-                    t0 = _project_param(start, end, dstart)
-                    t1 = _project_param(start, end, dend)
-
-                    tmin, tmax = min(t0, t1), max(t0, t1)
-                    # only consider door if it overlaps the wall at all
-                    if tmax <= 0.0 or tmin >= 1.0:
-                        continue
-                    door_ranges.append((tmin, tmax))
-                    cuts.extend([tmin, tmax])
-
-                # sanitize and sort cuts
-                cuts = sorted(set([max(0.0, min(1.0, float(c))) for c in cuts]))
-
-                # debug log door ranges
-                if door_ranges:
-                    self._logger.debug(f"Wall {i}: door_ranges={door_ranges}, cuts={cuts}")
-
-                # spawn segments between successive unique cut points, skipping door intervals
-                total_len = np.linalg.norm(end - start)
-                EPS = 1e-3
-                DOOR_EPS = 1e-3
-                seg_i = 0
-                spawned_segs = 0
-                for a_t, b_t in zip(cuts[:-1], cuts[1:]):
-                    seg_len = (b_t - a_t) * total_len
-                    if seg_len < EPS:
-                        self._logger.debug(f"Wall {i}: skipping tiny segment [{a_t:.4f},{b_t:.4f}] len={seg_len}")
-                        continue
-
-                    # if this interval overlaps any door range, skip it
-                    overlaps_door = False
-                    for dr_min, dr_max in door_ranges:
-                        if not (b_t <= dr_min + DOOR_EPS or a_t >= dr_max - DOOR_EPS):
-                            overlaps_door = True
-                            break
-
-                    if overlaps_door:
-                        self._logger.debug(f"Wall {i}: skipping segment [{a_t:.4f},{b_t:.4f}] because it overlaps a door range")
-                        continue
-
-                    seg_start = start + (end - start) * a_t
-                    seg_end = start + (end - start) * b_t
-
-                    self.services.spawn_wall.client.call(
-                        SpawnWall.Request(
-                            name=self._NS_WALL(f"wall_{next(self.wall_counter)}_seg{seg_i}"),
-                            start=[float(seg_start[0]), float(seg_start[1])],
-                            end=[float(seg_end[0]), float(seg_end[1])],
-                            height=height,
-                        )
+                self.services.spawn_wall.client.call(
+                    SpawnWall.Request(
+                        name=self._NS_WALL(wall_name),
+                        start=segment.start,
+                        end=segment.end,
+                        height=segment.height,
+                        width=segment.width,
+                        material=Material(**segment.material.load().asdict()),
+                        z_offset=segment.start.z
                     )
-                    seg_i += 1
-                    spawned_segs += 1
-
-                self._logger.info(f"Successfully spawned wall {i+1} as {spawned_segs} segment(s)")
-
-            except Exception as e:
-                self._logger.error(str(e))
-                raise  # Re-raise exception after logging
+                )
+            for obstacle in obstacles:
+                model = obstacle.model.get([ModelType.USD])
+                usd_path = model.path
+                self.services.import_obstacle.client.call(
+                    ImportObstacles.Request(
+                        name=self._NS_WALL(f"{obstacle.name}_{next(self._wall_counter)}"),
+                        usd_path=usd_path,
+                        pose=obstacle.pose.to_msg(),
+                    )
+                )
 
         self._logger.info("All walls spawned successfully.")
         return True
@@ -308,21 +244,25 @@ class IsaacSimulator(BaseSim):
         for floor in floors:
             try:
                 pos = [floor.pos.x, floor.pos.y]
-                i = next(self.floor_counter)
+                i = next(self._floor_counter)
                 self.services.spawn_floor.client.call(
                     SpawnFloor.Request(
                         name=self._NS_FLOOR(f"floor_{i}"),
                         x_length=floor.x_length,
                         y_length=floor.y_length,
                         pos=pos,
-                        material=floor.mat,
+                        material=Material(**floor.material.load().asdict()),
                     )
                 )
 
                 self._logger.info(f"Successfully spawned floor {i}")
 
             except Exception as e:
-                self._logger.error(str(e))
+                self._logger.error(f"Failed to spawn floor")
+                self._logger.error(repr(e))
+                import sys
+                import traceback
+                traceback.print_exc(file=sys.stderr)
                 return False
         return True
 
@@ -337,7 +277,7 @@ class IsaacSimulator(BaseSim):
                     start=[door.start.x, door.start.y],
                     end=[door.end.x, door.end.y],
                     height=door.height,
-                    material=door.material,
+                    material=Material(**door.material.load().asdict()),
                     kind=door.kind,
                 )
             )
