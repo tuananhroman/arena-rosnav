@@ -67,6 +67,8 @@ class DummySimulator(BaseSim):
     # world interface
     def spawn_walls(self, walls):
         self._logger.debug(f'spawning {len(walls)} walls')
+        for wall in walls:
+            wall.assets()
         return True
 
     def spawn_floors(self, floors):

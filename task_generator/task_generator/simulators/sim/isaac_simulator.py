@@ -10,7 +10,7 @@ import attrs
 import numpy as np
 import rclpy
 import rclpy.client
-from isaacsim_msgs.msg import NavPed, Person
+from isaacsim_msgs.msg import NavPed, Person, Material
 from isaacsim_msgs.srv import (
     DeletePrim,
     GetPrimAttributes,
@@ -158,7 +158,7 @@ class IsaacSimulator(BaseSim):
 
         for obstacle in obstacles:
             model = obstacle.model.get([ModelType.USD])
-            usd_path = os.path.abspath(model.path)
+            usd_path = model.path
             response = self.services.import_obstacle.client.call(
                 ImportObstacles.Request(
                     name=self._NS_OBSTACLE(obstacle.name),
@@ -211,7 +211,6 @@ class IsaacSimulator(BaseSim):
             segments, obstacles = wall.assets()
 
             for segment in segments:
-                material = segment.material.load()
                 wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
 
                 self.services.spawn_wall.client.call(
@@ -221,8 +220,7 @@ class IsaacSimulator(BaseSim):
                         end=segment.end,
                         height=segment.height,
                         width=segment.width,
-                        material=material.url,
-                        material_name=material.material_name,
+                        material=Material(**segment.material.load().asdict()),
                         z_offset=segment.start.z
                     )
                 )
@@ -231,7 +229,7 @@ class IsaacSimulator(BaseSim):
                 usd_path = model.path
                 self.services.import_obstacle.client.call(
                     ImportObstacles.Request(
-                        name=obstacle.name,
+                        name=self._NS_WALL(f"{obstacle.name}_{next(self._wall_counter)}"),
                         usd_path=usd_path,
                         pose=obstacle.pose.to_msg(),
                     )
@@ -245,7 +243,6 @@ class IsaacSimulator(BaseSim):
         self._logger.info("Attempting to spawn floors")
         for floor in floors:
             try:
-                mat = floor.mat.load()
                 pos = [floor.pos.x, floor.pos.y]
                 i = next(self._floor_counter)
                 self.services.spawn_floor.client.call(
@@ -254,15 +251,18 @@ class IsaacSimulator(BaseSim):
                         x_length=floor.x_length,
                         y_length=floor.y_length,
                         pos=pos,
-                        material=mat.url,
-                        material_name=mat.material_name,
+                        material=Material(**floor.material.load().asdict()),
                     )
                 )
 
-                self._logger.info(f"Successfully spawned floor {i+1}")
+                self._logger.info(f"Successfully spawned floor {i}")
 
             except Exception as e:
-                self._logger.error(str(e))
+                self._logger.error(f"Failed to spawn floor")
+                self._logger.error(repr(e))
+                import sys
+                import traceback
+                traceback.print_exc(file=sys.stderr)
                 return False
         return True
 
@@ -277,7 +277,7 @@ class IsaacSimulator(BaseSim):
                     start=[door.start.x, door.start.y],
                     end=[door.end.x, door.end.y],
                     height=door.height,
-                    material=door.material,
+                    material=Material(**door.material.load().asdict()),
                     kind=door.kind,
                 )
             )
