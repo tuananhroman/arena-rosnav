@@ -47,7 +47,6 @@ class TM_Prompt(TM_Obstacles):
 
     _config: PromptConfig
 
-
     def preprocess_world_description(self, world_description: dict) -> str:
         """
         Preprocesses the world description, keeps corners and walls only and converts them to 2D format.
@@ -73,8 +72,7 @@ class TM_Prompt(TM_Obstacles):
 
         return json.dumps(parsed, indent=2)
 
-
-    def llm_bt_output_to_config(self, llm_output: Dict)-> Dict:
+    def llm_bt_output_to_config(self, llm_output: Dict) -> Dict:
         try:
             config = {
                 "obstacles": {
@@ -97,9 +95,9 @@ class TM_Prompt(TM_Obstacles):
 
                 bt_root: Dict = hunav.get("bt_root")
                 behavior_tree_xml = Root.model_validate_json(json.dumps(bt_root)).to_xml()
-                
+
                 with tempfile.NamedTemporaryFile(
-                    mode='w+t', 
+                    mode='w+t',
                     suffix='.xml',
                     dir=tmp_dir.name,
                     delete=False
@@ -109,9 +107,9 @@ class TM_Prompt(TM_Obstacles):
                     })
                     tmp_xml_file.write(
                         ET.tostring(
-                            behavior_tree_xml, 
-                            encoding="UTF-8", 
-                            method='xml', 
+                            behavior_tree_xml,
+                            encoding="UTF-8",
+                            method='xml',
                             xml_declaration=True
                         ).decode("utf-8")
                     )
@@ -119,22 +117,21 @@ class TM_Prompt(TM_Obstacles):
                     with open(f"/home/nguyen/{id}.xml", 'w+t') as file:
                         file.write(
                             ET.tostring(
-                                behavior_tree_xml, 
-                                encoding="UTF-8", 
-                                method='xml', 
+                                behavior_tree_xml,
+                                encoding="UTF-8",
+                                method='xml',
                                 xml_declaration=True
                             ).decode("utf-8")
                         )
-                
+
                 config["obstacles"]["dynamic"].append(hunav_config)
-                
+
         except Exception as e:
             self.node.get_logger().error(f"Failed to parse Behavior tree from LLM response: {e}")
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
         return config
-    
 
     def setup_chroma(self):
         if os.path.isdir(CHROMA_DB_PATH):
@@ -150,8 +147,7 @@ class TM_Prompt(TM_Obstacles):
                 client=self.inference_client
             )
 
-
-    def _prompt_to_config(self, prompt: str, top_p: float, use_behavior_tree: bool, local: bool=False) -> dict:
+    def _prompt_to_config(self, prompt: str, top_p: float, use_behavior_tree: bool, local: bool = False) -> dict:
         world = World(self.node._world_manager.world_name)
         with open(world.world_path) as file:
             world_description = yaml.safe_load(file)
@@ -163,7 +159,7 @@ class TM_Prompt(TM_Obstacles):
         if use_behavior_tree:
             self.setup_chroma()
 
-            if "bt" not in self.cached_context.keys(): # system context is not cached (due to initialization)
+            if "bt" not in self.cached_context.keys():  # system context is not cached (due to initialization)
                 cache = self.inference_client.caches.create(
                     model=REMOTE_LM,
                     config=genai.types.CreateCachedContentConfig(
@@ -173,7 +169,7 @@ class TM_Prompt(TM_Obstacles):
                     )
                 )
                 self.cached_context.update({"bt": cache.name})
-                
+
             bt_nodes = get_relevant_bt_nodes(
                 query=f"What are the nodes should be used for creating the behavior tree as described below: \"{prompt}\"",
                 collection=self.chroma_collection,
@@ -186,7 +182,7 @@ class TM_Prompt(TM_Obstacles):
             )
 
         else:
-            if "arena" not in self.cached_context.keys(): # system context is not cached (due to initialization)
+            if "arena" not in self.cached_context.keys():  # system context is not cached (due to initialization)
                 cache = self.inference_client.caches.create(
                     model=REMOTE_LM,
                     config=genai.types.CreateCachedContentConfig(
@@ -200,8 +196,8 @@ class TM_Prompt(TM_Obstacles):
             messages.append(
                 f"Generate dynamic obstacles data for a simulation where: {prompt}. Generate data base on this world data as below: {world_info}. Only return valid JSON under the 'dynamic' field, using the format declared in the system context, with no explanation, thoughts, or extra text."
             )
-        
-        if local: # Currently not supported
+
+        if local:  # Currently not supported
             return {}
             from huggingface_hub import InferenceClient
             from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -222,7 +218,7 @@ class TM_Prompt(TM_Obstacles):
 
             # Tokenize input
             inputs = tokenizer([prompt_text], return_tensors="pt").to(model.device)
-            
+
             # Generate output
             outputs = model.generate(
                 **inputs,
@@ -316,20 +312,26 @@ class TM_Prompt(TM_Obstacles):
     def reset(self, **kwargs) -> CustomObstacles:
         user_prompt: str = kwargs.get(
             "user_prompt",
-            self._config.user_prompt.value,
+            # self._config.user_prompt.value,
         )
 
         top_p: float = kwargs.get(
             "top_p",
-            self._config.top_p.value
+            # self._config.top_p.value
         )
 
         use_behavior_tree: bool = kwargs.get(
             "behavior_tree",
-            self._config.behavior_tree.value,
+            # self._config.behavior_tree.value,
         )
 
-        parsed_config = self._parse_prompt(user_prompt, top_p, use_behavior_tree)
+        # parsed_config = self._parse_prompt(user_prompt, top_p, use_behavior_tree)
+
+        self.node.get_logger().warn(f"user_prompt :{self._config.user_prompt.value}")
+        self.node.get_logger().warn(f"top_p :{self._config.top_p.value}")
+        self.node.get_logger().warn(f"behavior_tree :{self._config.behavior_tree.value}")
+
+        parsed_config = _ParsedConfig([], [])
 
         return parsed_config.static, parsed_config.dynamic
 
@@ -340,10 +342,10 @@ class TM_Prompt(TM_Obstacles):
         #     api_key=os.environ["HF_TOKEN"],
         # )
 
-        # import debugpy
-        # debugpy.listen(("0.0.0.0", 8765))
-        # print("⏳ Waiting for debugger to attach...")
-        # debugpy.wait_for_client()
+        import debugpy
+        debugpy.listen(("0.0.0.0", 8765))
+        print("⏳ Waiting for debugger to attach...")
+        debugpy.wait_for_client()
 
         def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
             """Load config from YAML file in arena_bringup configs."""
@@ -362,10 +364,10 @@ class TM_Prompt(TM_Obstacles):
 
                 agent_config = config['hunav_loader']['ros__parameters']['agent1']
                 return agent_config
-            
+
             except Exception as e:
                 raise RuntimeError(f"Error loading config from {config_path}") from e
-            
+
         # default_hunav_config = _load_config() # Is not used yet
 
         self._config = PromptConfig(
@@ -383,14 +385,12 @@ class TM_Prompt(TM_Obstacles):
             )
         )
 
-
         if "GEMINI_API_KEY" not in os.environ:
-                self.node.get_logger().error("GEMINI_API_KEY environment variable not set!")
-                self.node.get_logger().error("Returning empty config!")
-                return {}
-        
+            self.node.get_logger().error("GEMINI_API_KEY environment variable not set!")
+            raise OSError("GEMINI_API_KEY environment variable not set!")
+
         self.inference_client = genai.Client(
             api_key=os.environ["GEMINI_API_KEY"]
         )
 
-        self.cached_context: Dict[str, str] = {}  # Whether the prompt context need to be changed and fed into LLM model 
+        self.cached_context: Dict[str, str] = {}  # Whether the prompt context need to be changed and fed into LLM model
