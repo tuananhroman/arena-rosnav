@@ -12,6 +12,7 @@
 #include "task_generator_msgs/srv/get_parametrizeds.hpp"
 #include "task_generator_msgs/srv/get_randoms.hpp"
 #include "task_generator_msgs/srv/get_scenarios.hpp"
+#include "task_generator_msgs/srv/get_prompts.hpp"
 #include "task_generator_msgs/srv/get_worlds.hpp"
 #include "task_generator_msgs/srv/get_robots.hpp"
 
@@ -66,14 +67,20 @@ namespace task_generator_gui
         void getScenarios(const std::string &world_name);
         void getTMRobotsParams();
 
-        void setTMObstaclesParamsRequest(rcl_interfaces::srv::SetParameters::Request::SharedPtr request);
-        void setTMRobotsParamsRequest(rcl_interfaces::srv::SetParameters::Request::SharedPtr request);
+        void setTMObstaclesParamsRequest();
+        void setTMRobotsParamsRequest();
         bool generateWorld();
         void getParams();
         void setParams();
         void setRobot();
         void checkRobotModel();
         bool hasNestedParameter(std::string parameter_name);
+        template <typename ServiceT>
+        typename ServiceT::Response::SharedPtr sendRequest(
+            const typename rclcpp::Client<ServiceT>::SharedPtr &client,
+            const typename ServiceT::Request::SharedPtr &request,
+            const std::string &service_name,
+            std::chrono::milliseconds cooldown = std::chrono::milliseconds(200));
 
         void setupUi();
         QComboBox *setupComboBoxWithLabel(QLayout *parent, const QStringList &combobox_values, const QString &label);
@@ -105,6 +112,8 @@ namespace task_generator_gui
         rclcpp::Client<task_generator_msgs::srv::GetRandoms>::SharedPtr get_randoms_client;
         // Client to get list of all available scenarios for given world
         rclcpp::Client<task_generator_msgs::srv::GetScenarios>::SharedPtr get_scenarios_client;
+        // Client to get list of default parameters of Prompt Obstacles Task Mode
+        rclcpp::Client<task_generator_msgs::srv::GetPrompts>::SharedPtr get_prompts_client;
         // Client to get list of all available worlds
         rclcpp::Client<task_generator_msgs::srv::GetWorlds>::SharedPtr get_worlds_client;
         // Client to get list of all available robots models

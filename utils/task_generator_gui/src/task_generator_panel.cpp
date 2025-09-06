@@ -25,6 +25,9 @@ namespace task_generator_gui
 
         // Create a new node for the service clients
         service_node = std::make_shared<rclcpp::Node>("tm_service_node");
+        // Set the log level to WARN
+        node->get_logger().set_level(rclcpp::Logger::Level::Warn);
+        service_node->get_logger().set_level(rclcpp::Logger::Level::Warn);
     }
 
     void TaskGeneratorPanel::load(const rviz_common::Config &config)
@@ -49,6 +52,8 @@ namespace task_generator_gui
         get_randoms_client = service_node->create_client<task_generator_msgs::srv::GetRandoms>(task_generator_node + "/get_randoms");
 
         get_scenarios_client = service_node->create_client<task_generator_msgs::srv::GetScenarios>(task_generator_node + "/get_scenarios");
+
+        get_prompts_client = service_node->create_client<task_generator_msgs::srv::GetPrompts>(task_generator_node + "/get_prompts");
 
         set_param_client = service_node->create_client<rcl_interfaces::srv::SetParameters>(task_generator_node + "/set_parameters");
 
@@ -326,7 +331,7 @@ namespace task_generator_gui
             prompt_text_edit->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
             prompt_text_edit->setLineWrapColumnOrWidth(1);
             prompt_text_edit->setLineWrapMode(QTextEdit::LineWrapMode::WidgetWidth);
-            // prompt_text_edit->setText(QString::fromStdString(typed_prompt));
+            prompt_text_edit->setText(QString::fromStdString(typed_prompt));
             connect(prompt_text_edit, &QTextEdit::textChanged, this, [this, prompt_text_edit]()
                     { typed_prompt = prompt_text_edit->toPlainText().toStdString(); });
 
