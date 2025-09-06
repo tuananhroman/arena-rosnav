@@ -245,6 +245,17 @@ class TaskGenerator(NodeInterface.Taskgen_T):
             request.world or self._world_manager.world_name
         ).scenario.list()
         return response
+    
+    def _cb_get_prompts(
+        self,
+        request: task_generator_msgs.srv.GetPrompts.Request,
+        response: task_generator_msgs.srv.GetPrompts.Response,
+    ):
+        response.user_prompt = "An empty space with no pedestrian."
+        response.top_p = 0.3
+        response.behavior_tree = False
+
+        return response
 
     def _cb_get_worlds(
         self,
@@ -292,6 +303,12 @@ class TaskGenerator(NodeInterface.Taskgen_T):
             task_generator_msgs.srv.GetScenarios,
             self.service_namespace('get_scenarios'),
             self._cb_get_scenarios
+        )
+
+        self.create_service(
+            task_generator_msgs.srv.GetPrompts,
+            self.service_namespace('get_prompts'),
+            self._cb_get_prompts
         )
 
         self.create_service(
