@@ -60,15 +60,16 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
 
     def __init__(
         self,
-        node: SupervisorNode,
         ns: Union[str, Namespace],
         space_manager: Union[BaseSpaceManager, Dict[str, Any]],
         reward_function: Union[RewardFunction, Dict[str, Any]],
+        node: Optional[SupervisorNode] = None,
         simulation_state_container: Optional[SimulationStateContainer] = None,
         max_steps_per_episode: int = 100,
         init_by_call: bool = False,
         wait_for_obs: bool = False,
         obs_unit_kwargs: Optional[Dict[str, Any]] = None,
+        train_mode: bool = True,
         *args,
         **kwargs,
     ):
@@ -97,7 +98,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         self.node = node
         self.ns = Namespace(ns) if isinstance(ns, str) else ns
 
-        self._is_train_mode = self.node.get_parameter_or("/train_mode", True)
+        self._is_train_mode = train_mode
         if self.is_train_mode and reward_function is None:
             raise ValueError("A reward function is required for training mode.")
 
@@ -123,6 +124,11 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
 
     def _initialize_environment(self):
         """Initializes ROS-dependent components and the observation manager."""
+        if self.node is None:
+            # rclpy.init()  # Initialize ROS in worker process
+            env_node_name = f"{self.ns.to_string()}_env".replace("/", "_")
+            self.node = SupervisorNode(node_name=env_node_name)
+
         if self.is_train_mode:
             self._setup_ros_services()
 
@@ -157,6 +163,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
 
     def _setup_observation_manager(self):
         """Configures and initializes the ObservationManager."""
+        # TODO: Implement observation manager setup
         with open(
             "/home/le/arena4_ws_exp/src/planners/rosnav_rl/rosnav_rl/rosnav_rl/observations/observations.yaml",
             "r",
@@ -168,8 +175,8 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             config=config,
             node=self.node,
             ns=self.ns.to_string(),
-            simulation_state_container=None,  # You can pass a SimulationStateContainer if needed
-            wait_for_obs=False,  # Wait for topics to be available
+            simulation_state_container=self.simulation_state_container,
+            wait_for_obs=self.__wait_for_obs,  # Wait for topics to be available
         )
 
     @property
@@ -218,7 +225,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         """Encodes the given observation using the model space encoder."""
         return self._model_space_manager.encode_observation(observation)
 
-    def _wait_for_action_consumption(self, timeout: float = 10.0) -> None:
+    def _wait_for_action_consumption(self, timeout: float = 20.0) -> None:
         """
         Waits for the `get_command` service to consume the action set by `step()`.
 
@@ -272,9 +279,6 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
         decoded_action = self._decode_action(action)
 
         # Make the action available to the service and notify it.
-        self.node.get_logger().info(
-            f"[Step] Setting action available: {decoded_action}"
-        )
         with self._action_condition:
             if not self._action_is_consumed:
                 self.node.get_logger().warn(
@@ -288,11 +292,7 @@ class ArenaBaseEnv(ABC, gymnasium.Env):
             self._action_condition.notify()
 
         # Wait for the simulation controller to request and consume the action.
-        self.node.get_logger().info("[Step] Waiting for action consumption...")
         self._wait_for_action_consumption()
-        self.node.get_logger().info(
-            "[Step] Action consumed, proceeding with environment step."
-        )
 
         # Once the action is consumed, proceed with the environment step.
         obs_dict = self.observation_collector.get_observations(

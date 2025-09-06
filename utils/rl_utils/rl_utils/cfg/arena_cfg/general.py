@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator
-import rclpy
+from typing import Union
 
 
 class GeneralCfg(BaseModel):
@@ -20,3 +20,4 @@ class GeneralCfg(BaseModel):
     max_num_moves_per_eps: int = Field(150, ge=1)
     goal_radius: float = Field(0.4, title="Goal Radius", gt=0)
     safety_distance: float = Field(1.0, gt=0)
+    verbose: Union[int, bool] = Field(False, title="Verbose Mode")

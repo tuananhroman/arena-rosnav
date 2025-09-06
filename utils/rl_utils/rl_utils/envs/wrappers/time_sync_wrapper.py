@@ -1,5 +1,4 @@
 import gymnasium as gym
-import rclpy
 import time
 from rclpy.node import Node
 from rclpy.time import Time  # Import Time for type hinting
@@ -32,6 +31,19 @@ class TimeSyncWrapper(gym.Wrapper):
         # Time when the last env.step() was allowed to initiate.
         # Initialized to current time, so the first step call will also adhere to the interval logic.
         self.last_step_initiation_time: Time = self.clock.now()
+
+    def _initialize_environment(self):
+        """
+        Initializes the environment if it has an _initialize_environment method.
+        This is useful for environments that require some setup before use.
+        """
+        if hasattr(self.env, "_initialize_environment"):
+            return self.env._initialize_environment()
+        else:
+            self.node.get_logger().warn(
+                "The wrapped environment does not have an _initialize_environment method."
+            )
+            return None
 
     def _now(self) -> Time:
         """Returns the current ROS time as an rclpy.time.Time object."""
