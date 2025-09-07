@@ -230,9 +230,7 @@ class TaskFactory(Namespaced):
                         self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles)
                         self.environment_manager.spawn_obstacles(obstacles)
 
-                    self.environment_manager.respawn(lambda: None)
-                    respawn()
-                    # TODO currently not working because of race condition in isaac sim
+                    self.environment_manager.respawn(respawn)
 
                     for module in self.__modules:
                         module.after_reset()
