@@ -325,11 +325,6 @@ class TM_Prompt(TM_Obstacles):
         #     api_key=os.environ["HF_TOKEN"],
         # )
 
-        # import debugpy
-        # debugpy.listen(("0.0.0.0", 8765))
-        # print("⏳ Waiting for debugger to attach...")
-        # debugpy.wait_for_client()
-
         def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
             """Load config from YAML file in arena_bringup configs."""
 
