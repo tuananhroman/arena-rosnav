@@ -1,0 +1,15 @@
+[project]
+name = "model_converter"
+version = "0.1.0"
+description = "A tool for converting models using bpy"
+authors = [
+    { name = "Vova Shcherbyna", email = "dev@voshch.dev" }
+]
+dependencies = [
+    "bpy"
+]
+requires-python = "==3.11.*"
+
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
