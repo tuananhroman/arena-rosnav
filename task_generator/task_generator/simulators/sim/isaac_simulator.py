@@ -326,35 +326,38 @@ class IsaacSimulator(BaseSim):
 
         # TODO implement targeted pedestrian models
         for pedestrian in pedestrians:
-            model_name = random.choice(
-                [
-                    # "F_Business_02",
-                    # "F_Medical_01",
-                    # "M_Medical_01",
-                    # "biped_demo",
-                    # "female_adult_police_01_new",
-                    # "female_adult_police_02",
-                    # "female_adult_police_03_new",
-                    # "male_adult_construction_01_new",
-                    # "male_adult_construction_03",
-                    # "male_adult_construction_05_new",
-                    # "male_adult_police_04",
-                    "original_female_adult_business_02",
-                    "original_female_adult_medical_01",
-                    "original_female_adult_police_01",
-                    "original_female_adult_police_02",
-                    "original_female_adult_police_03",
-                    "original_male_adult_construction_01",
-                    "original_male_adult_construction_02",
-                    "original_male_adult_construction_03",
-                    "original_male_adult_construction_05",
-                    "original_male_adult_medical_01",
-                    "original_male_adult_police_04",
-                ]
-            )
+            available_models: dict[str, str] = {
+                # "F_Business_02",
+                # "F_Medical_01",
+                # "M_Medical_01",
+                # "biped_demo",
+                # "female_adult_police_01_new",
+                # "female_adult_police_02",
+                # "female_adult_police_03_new",
+                # "male_adult_construction_01_new",
+                # "male_adult_construction_03",
+                # "male_adult_construction_05_new",
+                # "male_adult_police_04",
+                "female_adult_business_02": "original_female_adult_business_02",
+                "female_adult_medical_01": "original_female_adult_medical_01",
+                "female_adult_police_01": "original_female_adult_police_01",
+                "female_adult_police_02": "original_female_adult_police_02",
+                "female_adult_police_03": "original_female_adult_police_03",
+                "male_adult_construction_01": "original_male_adult_construction_01",
+                "male_adult_construction_02": "original_male_adult_construction_02",
+                "male_adult_construction_03": "original_male_adult_construction_03",
+                "male_adult_construction_05": "original_male_adult_construction_05",
+                "male_adult_medical_01": "original_male_adult_medical_01",
+                "male_adult_police_04": "original_male_adult_police_04",
+            }
+            if pedestrian.model.name in available_models:
+                model_name = pedestrian.model.name
+            else:
+                model_name = random.choice(tuple(available_models.keys()))
+
             ped = Pedestrian()
             ped.name = self._NS_PEDESTRIAN(pedestrian.name)
-            ped.character_name = model_name
+            ped.character_name = available_models[model_name]
             ped.pose = pedestrian.pose.to_msg()
             ped.controller_stats = False
 
@@ -391,7 +394,7 @@ class IsaacSimulator(BaseSim):
                 return False
 
             goal = PedestrianGoal()
-            goal.name = self._NS_PEDESTRIAN(name, "ManRoot", self.ped_dict[name].replace("original_", ""))
+            goal.name = self._NS_PEDESTRIAN(name, "ManRoot", self.ped_dict[name])
             goal.position = ped.pose.position
             goal.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
             req.goals.append(goal)
