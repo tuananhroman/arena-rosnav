@@ -114,7 +114,7 @@ class TM_Prompt(TM_Obstacles):
                         ).decode("utf-8")
                     )
 
-                    with open(f"/home/nguyen/{id}.xml", 'w+t') as file:
+                    with open(f"/home/linh/{id}.xml", 'w+t') as file:
                         file.write(
                             ET.tostring(
                                 behavior_tree_xml,
@@ -310,28 +310,11 @@ class TM_Prompt(TM_Obstacles):
         return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
 
     def reset(self, **kwargs) -> CustomObstacles:
-        user_prompt: str = kwargs.get(
-            "user_prompt",
-            # self._config.user_prompt.value,
+        parsed_config = self._parse_prompt(
+            self._config.user_prompt.value,
+            self._config.top_p.value,
+            self._config.behavior_tree.value,
         )
-
-        top_p: float = kwargs.get(
-            "top_p",
-            # self._config.top_p.value
-        )
-
-        use_behavior_tree: bool = kwargs.get(
-            "behavior_tree",
-            # self._config.behavior_tree.value,
-        )
-
-        # parsed_config = self._parse_prompt(user_prompt, top_p, use_behavior_tree)
-
-        self.node.get_logger().warn(f"user_prompt :{self._config.user_prompt.value}")
-        self.node.get_logger().warn(f"top_p :{self._config.top_p.value}")
-        self.node.get_logger().warn(f"behavior_tree :{self._config.behavior_tree.value}")
-
-        parsed_config = _ParsedConfig([], [])
 
         return parsed_config.static, parsed_config.dynamic
 
@@ -342,10 +325,10 @@ class TM_Prompt(TM_Obstacles):
         #     api_key=os.environ["HF_TOKEN"],
         # )
 
-        import debugpy
-        debugpy.listen(("0.0.0.0", 8765))
-        print("⏳ Waiting for debugger to attach...")
-        debugpy.wait_for_client()
+        # import debugpy
+        # debugpy.listen(("0.0.0.0", 8765))
+        # print("⏳ Waiting for debugger to attach...")
+        # debugpy.wait_for_client()
 
         def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
             """Load config from YAML file in arena_bringup configs."""
