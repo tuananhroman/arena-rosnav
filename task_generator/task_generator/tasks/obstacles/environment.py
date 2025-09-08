@@ -448,7 +448,6 @@ class TM_Environment(TM_Obstacles):
                                         Orientation.from_yaw(rot_theta)
                                     ),
                                     model=entity["model"],
-                                    type_ = "Obstacle",
                                     extra={},
                                 )
                                 static_obstacles.append(new_obstacle)
