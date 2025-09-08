@@ -1,6 +1,7 @@
 from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, CustomDynamicObstacle, Obstacles, CustomObstacles, TM_Obstacles
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_simulation_setup.utils.cattrs import converter
 import os
 from arena_simulation_setup.worlds.world import WorldDescription
 import json
@@ -70,6 +71,15 @@ class TM_Prompt(TM_Obstacles):
                 "walls": [[[wall.start.x, wall.start.y], [wall.end.x, wall.end.y]] for wall in zone.walls],
             }
             parsed["zones"].append(parsed_zone)
+
+        parsed["entities"] = []
+        for entity in parsed_zone.get("entities", {}).get("static", []):
+            parsed_entity = {
+                "name": entity.get("name", ""),
+                "model": entity.get("model", ""),
+                "pose": entity.get("pose", [])
+            }
+            parsed["entities"].append(parsed_entity)
 
         return json.dumps(parsed, indent=2)
 
@@ -269,8 +279,8 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        # with open("/home/nguyen/scenario.json", "w") as file:
-        #     json.dump(config, file)
+        with open("/home/linh/scenario.json", "w") as file:
+            json.dump(config, file)
 
         return config
 

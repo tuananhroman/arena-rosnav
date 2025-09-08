@@ -11,7 +11,7 @@ world_information = """
     - `entities`: contains static objects in the zone. Each static object has:
     -   - `name`: the object's unique name.
     -   - `model`: the type of object (e.g., `shelf`).
-    -   - `pose`: a list [x, y, z] representing the object's position.
+    -   - `pose`: a list [x, y, yaw] representing the object's position and rotation.
     - `description`: a human-readable name of the zone.
 """
 
@@ -28,7 +28,7 @@ arena_format = """
                 "pos": [
                     <x>,
                     <y>,
-                    0
+                    <yaw>
                 ],
                 "type": <agent type>,
                 "model": <agent model>,
@@ -136,7 +136,7 @@ arena_field_descriptions = """
 
     The `dynamic` field is a list of dynamic obstacles, each with:
     - `name`: the object's unique name.
-    - `pos`: a list [x, y, yaw] representing the object's position and rotation.
+    - `pos`: a list [x, y, yaw] representing the object's position and rotation, you should pay attention to where the agent will be facing and adjust the yaw reasonably
     - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
     - `skin`: the skin of the dynamic obstacles, can be one of the following value:
         - `0`: renders an elegant man,
@@ -179,7 +179,7 @@ behavior_tree_format = """
                 "pos": [
                     <x>,
                     <y>,
-                    0
+                    <yaw>
                 ],
                 "type": <agent type>,
                 "model": <agent model>,
@@ -187,14 +187,14 @@ behavior_tree_format = """
                     [
                         <x1>,
                         <y1>,
-                        0
+                        <yaw1>
                     ],
                     ...,
 
                     [
                         <xn>,
                         <yn>,
-                        0
+                        <yawn>
                     ]
                 ],
                 "bt_root": {
@@ -252,7 +252,7 @@ behavior_tree_format = """
                 "pos": [
                     24.0,
                     2.0,
-                    0
+                    1.57
                 ],
                 "type": "adult",
                 "model": "gazebo_actor",
@@ -437,7 +437,7 @@ behavior_tree_descriptions = """
     Top-level structure
     - "hunav_agents" contains a list of hunav agents, each with:
         - `name`: the agent's unique identifier (e.g., "hunav_1").
-        - `pos`: a list [x, y, yaw] representing the object's position and rotation.
+        - `pos`: a list [x, y, yaw] representing the object's position and rotation. You should pay attention to where the agent should be spawned and faced, place the agent within the correct zone and adjust the yaw reasonably.
         - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
         - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only: 
             - "female_adult_business_02"
@@ -451,7 +451,7 @@ behavior_tree_descriptions = """
             - "male_adult_construction_05"
             - "male_adult_medical_01"
             - "male_adult_police_04"
-        - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, 0], [x2, y2, 0], ...]. The `waypoints` must satisfy the following constraints:
+        - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, yaw1], [x2, y2, yawn], ...]. The `waypoints` must satisfy the following constraints:
             - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
             - The waypoints must be valid positions on the map, avoiding walls and obstacles.
         - `bt_root`: the behavior tree specification for that agent.
