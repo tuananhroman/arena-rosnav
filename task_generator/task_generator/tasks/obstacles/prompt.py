@@ -1,6 +1,7 @@
 from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, CustomDynamicObstacle, Obstacles, CustomObstacles, TM_Obstacles
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
+from arena_simulation_setup.utils.cattrs import converter
 import os
 from arena_simulation_setup.worlds.world import World
 import json
@@ -65,10 +66,19 @@ class TM_Prompt(TM_Obstacles):
         for zone in world_description.get("zones", []):
             parsed_zone = {
                 "name": zone.get("name", ""),
-                "corners": [[corner['x'], corner['y']] for corner in zone.get("corners", [])],
+                "corners": [[corner[0], corner[1]] for corner in zone.get("corners", [])],
                 "walls": [[[wall['start']['x'], wall['start']['y']], [wall['end']['x'], wall['end']['y']]] for wall in zone.get("walls", [])],
             }
             parsed["zones"].append(parsed_zone)
+
+        parsed["entities"] = []
+        for entity in parsed_zone.get("entities", {}).get("static", []):
+            parsed_entity = {
+                "name": entity.get("name", ""),
+                "model": entity.get("model", ""),
+                "pose": entity.get("pose", [])
+            }
+            parsed["entities"].append(parsed_entity)
 
         return json.dumps(parsed, indent=2)
 
@@ -272,8 +282,8 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        # with open("/home/nguyen/scenario.json", "w") as file:
-        #     json.dump(config, file)
+        with open("/home/linh/scenario.json", "w") as file:
+            json.dump(config, file)
 
         return config
 
@@ -307,7 +317,7 @@ class TM_Prompt(TM_Obstacles):
             in config.get("obstacles", {}).get("dynamic", [])
         ]
 
-        return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
+        return converter.structure(dict(static=static_obstacles, dynamic=dynamic_obstacles), _ParsedConfig)
 
     def reset(self, **kwargs) -> CustomObstacles:
         parsed_config = self._parse_prompt(
