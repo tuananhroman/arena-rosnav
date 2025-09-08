@@ -2,7 +2,7 @@ from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, CustomDyna
 import attrs
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 import os
-from arena_simulation_setup.worlds.world import World
+from arena_simulation_setup.worlds.world import WorldDescription
 import json
 import itertools
 import time
@@ -16,6 +16,7 @@ import pprint
 import tempfile
 import xml.etree.ElementTree as ET
 from typing import Dict
+from arena_simulation_setup.utils.cattrs import converter
 
 
 @attrs.define()
@@ -47,12 +48,12 @@ class TM_Prompt(TM_Obstacles):
 
     _config: PromptConfig
 
-    def preprocess_world_description(self, world_description: dict) -> str:
+    def preprocess_world_description(self, world_description: WorldDescription) -> str:
         """
         Preprocesses the world description, keeps corners and walls only and converts them to 2D format.
 
         Args:
-            world_description : dict
+            world_description : WorldDescription
                 The world description to preprocess.
 
         Returns:
@@ -62,11 +63,11 @@ class TM_Prompt(TM_Obstacles):
         parsed = {}
 
         parsed["zones"] = []
-        for zone in world_description.get("zones", []):
+        for zone in world_description.zones:
             parsed_zone = {
-                "name": zone.get("name", ""),
-                "corners": [[corner['x'], corner['y']] for corner in zone.get("corners", [])],
-                "walls": [[[wall['start']['x'], wall['start']['y']], [wall['end']['x'], wall['end']['y']]] for wall in zone.get("walls", [])],
+                "name": zone.name,
+                "corners": [[corner.x, corner.y] for corner in zone.corners],
+                "walls": [[[wall.start.x, wall.start.y], [wall.end.x, wall.end.y]] for wall in zone.walls],
             }
             parsed["zones"].append(parsed_zone)
 
@@ -148,11 +149,7 @@ class TM_Prompt(TM_Obstacles):
             )
 
     def _prompt_to_config(self, prompt: str, top_p: float, use_behavior_tree: bool, local: bool = False) -> dict:
-        world = World(self.node._world_manager.world_name)
-        with open(world.world_path) as file:
-            world_description = yaml.safe_load(file)
-
-        world_info = self.preprocess_world_description(world_description)
+        world_info = self.preprocess_world_description(self._PROPS.world_manager.world)
 
         messages = []
 
@@ -302,12 +299,16 @@ class TM_Prompt(TM_Obstacles):
         ]
 
         dynamic_obstacles = [
-            CustomDynamicObstacle.parse(obs)
+            obs
             for obs
             in config.get("obstacles", {}).get("dynamic", [])
         ]
 
-        return _ParsedConfig(static=static_obstacles, dynamic=dynamic_obstacles)
+        result = converter.structure(dict(static=static_obstacles, dynamic=dynamic_obstacles), _ParsedConfig)
+        # import attrs
+        # self._logger.warning("Final result:")
+        # self._logger.warning(pprint.pformat(attrs.asdict(result)))
+        return result
 
     def reset(self, **kwargs) -> CustomObstacles:
         parsed_config = self._parse_prompt(
