@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-USD_PATH=${USD_PATH:-"${ARENA_WS_DIR}/tools/OpenUSD/install"}
+USD_PATH=${USD_PATH:-"${ARENA_WS_DIR:-.}/tools/OpenUSD/install"}
 
 if [ ! -e "${USD_PATH}/lib/libusd_usd.so" ]; then
     echo "$USD_PATH" is not a valid USD install directory. Rerun the arena installer or set ARENA_WS_DIR environment variable correctly.

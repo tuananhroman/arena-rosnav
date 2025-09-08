@@ -1,0 +1,37 @@
+#!/bin/bash
+
+to_usd="python -m model_converter.to_usd"
+base_dir=$(realpath src/arena/simulation-setup/entities/obstacles/static)
+for dir in "$base_dir"/*/; do
+    dir=${dir%*/}
+    dir=${dir##*/}
+    sdf_file=$(realpath "$base_dir/$dir/sdf/$dir.sdf")
+    usd_file=$(realpath "$base_dir/$dir/usd/$dir.usdz")
+    if [ -f "$sdf_file" ]; then
+        echo "Found SDF file for $dir, converting to USD..."
+        pushd "$base_dir"
+            obj_name=$(grep -oP 'model://\K[^<]*' "$sdf_file" | head -n 1)
+            if [ -z "$obj_name" ] ;then
+                echo "No model found in $sdf_file"
+                popd
+                continue
+            fi
+            if [ ! -f "$obj_name" ]; then
+                echo "model $obj_name is not a file"
+                popd
+                continue
+            fi
+            obj_name=$(realpath "$obj_name")
+
+            pushd "$(dirname "$obj_name")"
+                mkdir -p $(dirname "$usd_file")
+                $to_usd "$obj_name" "$usd_file"
+                if [ $? -ne 0 ]; then
+                    echo "Error converting $dir.sdf to USD"
+                else
+                    echo "Successfully converted to $usd_file"
+                fi
+            popd
+        popd
+    fi
+done
