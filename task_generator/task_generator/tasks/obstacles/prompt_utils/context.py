@@ -146,7 +146,18 @@ arena_field_descriptions = """
         - `4`: renders a worker man,
         - `5`: renders a walk person
     - `group_id` (): the unique id of a group that the dynamic obstacles is in, `-1` means the obstacles doesn't belong to any group.
-    - `model`: the type of model used for the dynamic obstacle (e.g., `gazebo_actor`).
+    - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only: 
+        - "female_adult_business_02"
+        - "female_adult_medical_01"
+        - "female_adult_police_01"
+        - "female_adult_police_02"
+        - "female_adult_police_03"
+        - "male_adult_construction_01"
+        - "male_adult_construction_02"
+        - "male_adult_construction_03"
+        - "male_adult_construction_05"
+        - "male_adult_medical_01"
+        - "male_adult_police_04"
     - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, 0], [x2, y2, 0], ...].
     - `cyclic_goals`: whether the dynamic obstacles continue to follow the waypoints repeatedly, can be `true` or `false`.
     - `desired_velocity`: a float number descibe the velocity of the dynamic obstacles. This value ranges from [0, 3.5], where [0, 0.3] is stationary, (0.3, 1.0] is idling, (1.0, 2.0] is normal walking and (2.0, 3.5] is running.
@@ -428,7 +439,18 @@ behavior_tree_descriptions = """
         - `name`: the agent's unique identifier (e.g., "hunav_1").
         - `pos`: a list [x, y, yaw] representing the object's position and rotation.
         - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
-        - `model`: the type of model used for the dynamic obstacle (e.g., `gazebo_actor`).
+        - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only: 
+            - "female_adult_business_02"
+            - "female_adult_medical_01"
+            - "female_adult_police_01"
+            - "female_adult_police_02"
+            - "female_adult_police_03"
+            - "male_adult_construction_01"
+            - "male_adult_construction_02"
+            - "male_adult_construction_03"
+            - "male_adult_construction_05"
+            - "male_adult_medical_01"
+            - "male_adult_police_04"
         - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x1, y1, 0], [x2, y2, 0], ...]. The `waypoints` must satisfy the following constraints:
             - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
             - The waypoints must be valid positions on the map, avoiding walls and obstacles.
