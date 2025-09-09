@@ -114,7 +114,7 @@ class TM_Prompt(TM_Obstacles):
                     delete=False
                 ) as tmp_xml_file:
                     hunav_config.update({
-                        "behavior_tree": os.path.join(tmp_dir.name, tmp_xml_file.name)
+                        "behavior_tree": f"/home/linh/{id}.xml"
                     })
                     tmp_xml_file.write(
                         ET.tostring(
@@ -249,7 +249,7 @@ class TM_Prompt(TM_Obstacles):
                     top_p=top_p,
                     thinking_config=genai.types.ThinkingConfig(
                         include_thoughts=False,
-                        thinking_budget=0
+                        thinking_budget=8192
                     ),
                 )
             )

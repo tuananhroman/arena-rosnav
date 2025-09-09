@@ -10,7 +10,7 @@ class InputPort(BaseModel):
     name: str
     type: str
     default: Optional[str] = None
-    value: Optional[str] = None
+    description: Optional[str] = None
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
@@ -22,14 +22,16 @@ class InputPort(BaseModel):
         )
         if self.default:
             element.set("default", self.default)
-        if self.value:
-            element.set("value", self.value)
+        if self.description:
+            element.text = self.description
 
         return element
 
 class OutputPort(BaseModel):
     name: str
     type: str
+    default: Optional[str] = None
+    description: Optional[str] = None
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
@@ -39,6 +41,10 @@ class OutputPort(BaseModel):
                 "type": self.type
             }
         )
+        if self.default:
+            element.set("default", self.default)
+        if self.description:
+            element.text = self.description
 
         return element
 
@@ -218,7 +224,7 @@ NodeUnion = Union[ControlNode, DecorationNode, LeafNode]
 
 class BehaviorTree(BaseModel):
     ID: str
-    children_nodes: List[NodeUnion]
+    child_node: NodeUnion
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
@@ -228,8 +234,7 @@ class BehaviorTree(BaseModel):
             }
         )
 
-        for node in self.children_nodes:
-            element.append(node.to_xml())
+        element.append(self.child_node.to_xml())
 
         return element
 
