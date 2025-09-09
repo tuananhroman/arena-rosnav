@@ -227,8 +227,8 @@ class TaskFactory(Namespaced):
                     obstacles, dynamic_obstacles = self.__tm_obstacles.reset(**kwargs)
 
                     def respawn():
-                        self.environment_manager.spawn_obstacles(obstacles)
                         self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles)
+                        self.environment_manager.spawn_obstacles(obstacles)
 
                     self.environment_manager.respawn(respawn)
 

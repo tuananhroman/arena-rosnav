@@ -1,7 +1,9 @@
 import itertools
 import os
 import random
+import sys
 import time
+import traceback
 import typing
 
 import arena_people_msgs.msg
@@ -10,20 +12,28 @@ import attrs
 import numpy as np
 import rclpy
 import rclpy.client
-from isaacsim_msgs.msg import NavPed, Person
-from isaacsim_msgs.srv import (
-    DeletePrim,
-    GetPrimAttributes,
-    ImportObstacles,
-    ImportUsd,
-    MovePed,
-    MovePrim,
+from isaacsim_msgs.msg import (
+    Door,
+    Floor,
+    Material,
     Pedestrian,
-    SpawnDoor,
+    PedestrianGoal,
+    Prim,
+    Wall,
+)
+from isaacsim_msgs.srv import (
+    DeletePrims,
+    EditPrims,
+    NavigatePedestrians,
+    SpawnDoors,
+    SpawnFloors,
+    SpawnPedestrians,
+    SpawnPrims,
+    SpawnUrdf,
+    SpawnUsd,
+    SpawnWalls,
     SpawnElevator,
-    SpawnFloor,
     SpawnWall,
-    UrdfToUsd,
 )
 from std_msgs.msg import String as StdString
 
@@ -53,21 +63,6 @@ class _Service:
     @client.setter
     def client(self, value: rclpy.client.Client):
         self._client = value
-
-
-class _Services(typing.NamedTuple):
-    get_prim_attributes: _Service
-    urdf_to_usd: _Service
-    import_usd: _Service
-    import_obstacle: _Service
-    move_prim: _Service
-    delete_prim: _Service
-    spawn_wall: _Service
-    spawn_floor: _Service
-    spawn_door: _Service
-    import_pedestrians: _Service
-    move_pedestrians: _Service
-    delete_all_pedestrians: _Service
 
 
 class IsaacSimulator(BaseSim):
@@ -192,12 +187,25 @@ class IsaacSimulator(BaseSim):
             self._logger.error(f"teleport_robot failed for {robot_name}: {e}")
             return False
 
-    _NS_OBSTACLE = Namespace('Obstacles')
+    _NS_PRIM = Namespace('Obstacles')
     _NS_PEDESTRIAN = Namespace('Pedestrians')
     _NS_ROBOT = Namespace('Robots')
     _NS_WALL = Namespace('Walls')
     _NS_FLOOR = Namespace('Floors')
     _NS_DOOR = Namespace('Doors')
+
+    class _services:
+        DeleteAllPedestrians = _Service(type_=DeletePrims, name="isaac/DeleteAllPedestrians")
+        DeletePrims = _Service(type_=DeletePrims, name="isaac/DeletePrims")
+        EditPrims = _Service(type_=EditPrims, name="isaac/EditPrims")
+        NavigatePedestrians = _Service(type_=NavigatePedestrians, name="isaac/NavigatePedestrians")
+        SpawnDoors = _Service(type_=SpawnDoors, name="isaac/SpawnDoors")
+        SpawnFloors = _Service(type_=SpawnFloors, name='isaac/SpawnFloors')
+        SpawnPedestrians = _Service(type_=SpawnPedestrians, name="isaac/SpawnPedestrians")
+        SpawnPrims = _Service(type_=SpawnPrims, name="isaac/SpawnPrims")
+        SpawnUrdf = _Service(type_=SpawnUrdf, name="isaac/SpawnUrdf")
+        SpawnUsd = _Service(type_=SpawnUsd, name="isaac/SpawnUsd")
+        SpawnWalls = _Service(type_=SpawnWalls, name="isaac/SpawnWalls")
 
     def __init__(self, namespace):
         """Initialize IsaacSimulator
@@ -213,7 +221,7 @@ class IsaacSimulator(BaseSim):
         self.wall_counter = itertools.count()
         self.floor_counter = itertools.count()
         self._spawned_doors = []
-        self._elevator_pairs = []  # List of dicts: {a: {...}, b: {...}, cooldown: {robot_name: bool}}
+        self._elevator_pairs = []
         self._init_odom_cache()
         self._logger.info("Done initializing Isaac Sim")
 
@@ -233,16 +241,18 @@ class IsaacSimulator(BaseSim):
 
                     fq_name = self._NS_ROBOT(robot.name)
 
-                    self.services.urdf_to_usd.client.call(
-                        UrdfToUsd.Request(
+                    self._services.SpawnUrdf.client.call(
+                        SpawnUrdf.Request(
                             name=fq_name,
                             urdf_path=model.path,
                             robot_model=robot.model.name,
-                            no_localization=False,
+                            localization=True,
+                            tf_prefix=robot.name,
                             base_frame=robot_params.base_frame,
                             odom_frame=robot_params.odom_frame,
                             pose=robot.pose.to_msg(),
-                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel')
+                            cmd_vel_topic=self.node.service_namespace(robot.name, 'cmd_vel'),
+                            joint_states_topic=self.node.service_namespace(robot.name, 'joint_states'),
                         )
                     )
 
@@ -275,25 +285,23 @@ class IsaacSimulator(BaseSim):
         return tuple(map(impl, robots))
 
     def obstacle_spawn(self, obstacles):
-        results: bool = []
+        req = SpawnPrims.Request()
 
         for obstacle in obstacles:
             model = obstacle.model.get([ModelType.USD])
-            usd_path = os.path.abspath(model.path)
-            response = self.services.import_obstacle.client.call(
-                ImportObstacles.Request(
-                    name=self._NS_OBSTACLE(obstacle.name),
-                    usd_path=usd_path,
-                    pose=obstacle.pose.to_msg(),
-                )
-            )
-            results.append(response is not None)
+            prim = Prim()
+            prim.usd_path = model.path
+            prim.name = self._NS_PRIM(obstacle.name)
+            prim.pose = obstacle.pose.to_msg()
+            req.prims.append(prim)
 
-        return results
+        response = self._services.SpawnPrims.client.call(req)
+
+        return response.ret
 
     def obstacle_move(self, obstacles):
         def move_obstacle(obstacle: Obstacle) -> bool:
-            return self._move_entity(self._NS_OBSTACLE(obstacle.name), obstacle.pose)
+            return self._move_entity(self._NS_PRIM(obstacle.name), obstacle.pose)
         return tuple(map(move_obstacle, obstacles))
 
     def pedestrian_move(self, pedestrians):
@@ -307,7 +315,7 @@ class IsaacSimulator(BaseSim):
         return tuple(map(move_robot, robots))
 
     def obstacle_delete(self, obstacles):
-        return tuple(self._delete_entity(self._NS_OBSTACLE(o.name)) for o in obstacles)
+        return tuple(self._delete_entity(self._NS_PRIM(o.name)) for o in obstacles)
 
     def pedestrian_delete(self, pedestrians):
         return (True,) * len(pedestrians)
@@ -326,146 +334,105 @@ class IsaacSimulator(BaseSim):
         # return True
         self._logger.debug("Attempting to spawn walls")
 
-        # self.delete_walls()
-        time.sleep(0.01)
-        for i, wall in enumerate(walls):
-            try:
-                # Split wall by any doors previously spawned on this simulator
-                start = np.array([wall.start.x, wall.start.y], dtype=float)
-                end = np.array([wall.end.x, wall.end.y], dtype=float)
-                height = getattr(wall, 'height', 2.0)
+        walls_req = SpawnWalls.Request()
+        prims_req = SpawnPrims.Request()
 
-                # collect cut parameters t in [0,1]
-                cuts = [0.0, 1.0]
-                spawned_doors = getattr(self, '_spawned_doors', []) or []
+        for wall in walls:
 
-                # compute door ranges (t_min, t_max) along this wall for skipping
-                door_ranges: list[tuple[float, float]] = []
+            segments, obstacles = wall.assets()
 
-                for door in spawned_doors:
-                    try:
-                        dstart = np.array([door.start.x, door.start.y], dtype=float)
-                        dend = np.array([door.end.x, door.end.y], dtype=float)
-                    except Exception:
-                        # door may be a simple mapping; try dict-like
-                        try:
-                            dstart = np.array(door['start'][:2], dtype=float)
-                            dend = np.array(door['end'][:2], dtype=float)
-                        except Exception:
-                            continue
-
-                    def _project_param(a, b, p):
-                        ab = b - a
-                        denom = np.dot(ab, ab)
-                        if denom <= 1e-8:
-                            return 0.0
-                        t = float(np.dot(p - a, ab) / denom)
-                        return max(0.0, min(1.0, t))
-
-                    t0 = _project_param(start, end, dstart)
-                    t1 = _project_param(start, end, dend)
-
-                    tmin, tmax = min(t0, t1), max(t0, t1)
-                    # only consider door if it overlaps the wall at all
-                    if tmax <= 0.0 or tmin >= 1.0:
-                        continue
-                    door_ranges.append((tmin, tmax))
-                    cuts.extend([tmin, tmax])
-
-                # sanitize and sort cuts
-                cuts = sorted(set([max(0.0, min(1.0, float(c))) for c in cuts]))
-
-                # debug log door ranges
-                if door_ranges:
-                    self._logger.debug(f"Wall {i}: door_ranges={door_ranges}, cuts={cuts}")
-
-                # spawn segments between successive unique cut points, skipping door intervals
-                total_len = np.linalg.norm(end - start)
-                EPS = 1e-3
-                DOOR_EPS = 1e-3
-                seg_i = 0
-                spawned_segs = 0
-                for a_t, b_t in zip(cuts[:-1], cuts[1:]):
-                    seg_len = (b_t - a_t) * total_len
-                    if seg_len < EPS:
-                        self._logger.debug(f"Wall {i}: skipping tiny segment [{a_t:.4f},{b_t:.4f}] len={seg_len}")
-                        continue
-
-                    # if this interval overlaps any door range, skip it
-                    overlaps_door = False
-                    for dr_min, dr_max in door_ranges:
-                        if not (b_t <= dr_min + DOOR_EPS or a_t >= dr_max - DOOR_EPS):
-                            overlaps_door = True
-                            break
-
-                    if overlaps_door:
-                        self._logger.debug(f"Wall {i}: skipping segment [{a_t:.4f},{b_t:.4f}] because it overlaps a door range")
-                        continue
-
-                    seg_start = start + (end - start) * a_t
-                    seg_end = start + (end - start) * b_t
-
-                    self.services.spawn_wall.client.call(
-                        SpawnWall.Request(
-                            name=self._NS_WALL(f"wall_{next(self.wall_counter)}_seg{seg_i}"),
-                            start=[float(seg_start[0]), float(seg_start[1])],
-                            end=[float(seg_end[0]), float(seg_end[1])],
-                            height=height,
+            for segment in segments:
+                try:
+                    wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
+                    walls_req.walls.append(
+                        Wall(
+                            name=self._NS_WALL(wall_name),
+                            start=segment.start,
+                            end=segment.end,
+                            height=segment.height,
+                            width=segment.width,
+                            material=Material(**segment.material.load().asdict()),
+                            z_offset=segment.start.z
                         )
                     )
-                    seg_i += 1
-                    spawned_segs += 1
 
-                self._logger.info(f"Successfully spawned wall {i+1} as {spawned_segs} segment(s)")
+                except Exception as e:
+                    self._logger.error("Failed to spawn wall")
+                    self._logger.error(repr(e))
+                    traceback.print_exc(file=sys.stderr)
 
-            except Exception as e:
-                self._logger.error(str(e))
-                raise  # Re-raise exception after logging
+            for obstacle in obstacles:
+                try:
+                    prim_name = self.node._environment_manager.realize(f"obstacle_{next(self._wall_counter)}")
+                    model = obstacle.model.get([ModelType.USD])
+                    prim = Prim()
+                    prim.usd_path = model.path
+                    prim.name = self._NS_WALL(prim_name)
+                    prim.pose = obstacle.pose.to_msg()
+                    prims_req.prims.append(prim)
 
-        self._logger.info("All walls spawned successfully.")
-        return True
-        # time.sleep(0.01)
+                except Exception as e:
+                    self._logger.error("Failed to spawn wall obstacle")
+                    self._logger.error(repr(e))
+                    traceback.print_exc(file=sys.stderr)
+
+        res = all(self._services.SpawnWalls.client.call(walls_req).ret) and all(self._services.SpawnPrims.client.call(prims_req).ret)
+
+        self._logger.info("All walls spawned.")
+        return res
 
     def spawn_floors(self, floors) -> bool:
         self._logger.info("Attempting to spawn floors")
+
+        req = SpawnFloors.Request()
+
         for floor in floors:
             try:
                 pos = [floor.pos.x, floor.pos.y]
-                i = next(self.floor_counter)
-                self.services.spawn_floor.client.call(
-                    SpawnFloor.Request(
+                i = next(self._floor_counter)
+                req.floors.append(
+                    Floor(
                         name=self._NS_FLOOR(f"floor_{i}"),
                         x_length=floor.x_length,
                         y_length=floor.y_length,
                         pos=pos,
-                        material=floor.mat,
+                        material=Material(**floor.material.load().asdict()),
                     )
                 )
 
-                self._logger.info(f"Successfully spawned floor {i}")
-
             except Exception as e:
-                self._logger.error(str(e))
-                return False
-        return True
+                self._logger.error("Failed to spawn floor")
+                self._logger.error(repr(e))
+                traceback.print_exc(file=sys.stderr)
+
+        res = all(self._services.SpawnFloors.client.call(req).ret)
+        self._logger.info("All floors spawned successfully.")
+        return res
 
     def spawn_doors(self, doors) -> bool:
-        # cache doors so spawn_walls can split using door locations
-        self._spawned_doors = doors
+        req = SpawnDoors.Request()
 
         for door in doors:
-            self.services.spawn_door.client.call(
-                SpawnDoor.Request(
-                    name=self._NS_DOOR(door.name),
-                    start=[door.start.x, door.start.y],
-                    end=[door.end.x, door.end.y],
-                    height=door.height,
-                    material=door.material,
-                    kind=door.kind,
+            try:
+                req.doors.append(
+                    Door(
+                        name=self._NS_DOOR(door.name),
+                        start=[door.start.x, door.start.y],
+                        end=[door.end.x, door.end.y],
+                        height=door.height,
+                        material=Material(**door.material.load().asdict()),
+                        kind=door.kind,
+                    )
                 )
-            )
+
+            except Exception as e:
+                self._logger.error("Failed to spawn door")
+                self._logger.error(repr(e))
+                traceback.print_exc(file=sys.stderr)
+
+        res = all(self._services.SpawnDoors.client.call(req).ret)
         self._logger.info("All doors spawned successfully.")
-        return True
+        return res
 
     def spawn_elevators(self, elevators) -> bool:
         for elevator in elevators:
@@ -553,56 +520,54 @@ class IsaacSimulator(BaseSim):
 
     def pedestrian_spawn(self, pedestrians):
 
-        results: list[bool] = []
+        req = SpawnPedestrians.Request()
+        on_success: list[tuple[str, str]] = []
 
-        # TODO implement externally managed pedestrians
+        # TODO implement targeted pedestrian models
         for pedestrian in pedestrians:
-            model_name = random.choice(
-                [
-                    # "F_Business_02",
-                    # "F_Medical_01",
-                    # "M_Medical_01",
-                    # "biped_demo",
-                    # "female_adult_police_01_new",
-                    # "female_adult_police_02",
-                    # "female_adult_police_03_new",
-                    # "male_adult_construction_01_new",
-                    # "male_adult_construction_03",
-                    # "male_adult_construction_05_new",
-                    # "male_adult_police_04",
-                    "original_female_adult_business_02",
-                    "original_female_adult_medical_01",
-                    "original_female_adult_police_01",
-                    "original_female_adult_police_02",
-                    "original_female_adult_police_03",
-                    "original_male_adult_construction_01",
-                    "original_male_adult_construction_02",
-                    "original_male_adult_construction_03",
-                    "original_male_adult_construction_05",
-                    "original_male_adult_medical_01",
-                    "original_male_adult_police_04",
-                ]
-            )
-            result = self.services.import_pedestrians.client.call(
-                Pedestrian.Request(
-                    people=[
-                        Person(
-                            stage_prefix=self._NS_PEDESTRIAN(pedestrian.name),
-                            character_name=model_name,
-                            initial_pose=[
-                                pedestrian.pose.position.x,
-                                pedestrian.pose.position.y,
-                                0.0,
-                            ],
-                            orientation=pedestrian.pose.orientation.to_yaw(),
-                            controller_stats=False,
-                        )
-                    ]
-                )
-            )
-            if result is not None:
-                self.ped_dict[pedestrian.name] = model_name
-            results.append(result is not None)
+            available_models: dict[str, str] = {
+                # "F_Business_02",
+                # "F_Medical_01",
+                # "M_Medical_01",
+                # "biped_demo",
+                # "female_adult_police_01_new",
+                # "female_adult_police_02",
+                # "female_adult_police_03_new",
+                # "male_adult_construction_01_new",
+                # "male_adult_construction_03",
+                # "male_adult_construction_05_new",
+                # "male_adult_police_04",
+                "female_adult_business_02": "original_female_adult_business_02",
+                "female_adult_medical_01": "original_female_adult_medical_01",
+                "female_adult_police_01": "original_female_adult_police_01",
+                "female_adult_police_02": "original_female_adult_police_02",
+                "female_adult_police_03": "original_female_adult_police_03",
+                "male_adult_construction_01": "original_male_adult_construction_01",
+                "male_adult_construction_02": "original_male_adult_construction_02",
+                "male_adult_construction_03": "original_male_adult_construction_03",
+                "male_adult_construction_05": "original_male_adult_construction_05",
+                "male_adult_medical_01": "original_male_adult_medical_01",
+                "male_adult_police_04": "original_male_adult_police_04",
+            }
+            if pedestrian.model.name in available_models:
+                model_name = pedestrian.model.name
+            else:
+                model_name = random.choice(tuple(available_models.keys()))
+
+            ped = Pedestrian()
+            ped.name = self._NS_PEDESTRIAN(pedestrian.name)
+            ped.character_name = available_models[model_name]
+            ped.pose = pedestrian.pose.to_msg()
+            ped.controller_stats = False
+
+            req.pedestrians.append(ped)
+            on_success.append((pedestrian.name, model_name))
+
+        res = self._services.SpawnPedestrians.client.call(req)
+
+        for status, (name, model_name) in zip(res.ret, on_success):
+            if status:
+                self.ped_dict[name] = model_name
 
         self.pedestrian_update(
             arena_people_msgs.msg.Pedestrians(pedestrians=[
@@ -610,34 +575,76 @@ class IsaacSimulator(BaseSim):
                     name=ped.name,
                     pose=ped.pose.to_msg(),
                 )
-                for ped
-                in pedestrians
+                for status, ped
+                in zip(res.ret, pedestrians)
+                if status
             ])
         )
-        return True
+
+        return res.ret
 
     def pedestrian_update(self, pedestrians):
-        req = MovePed.Request()
+        req = NavigatePedestrians.Request()
 
         def impl(ped: DynamicObstacle) -> bool:
             name = ped.name
             if not name in self.ped_dict:
-                self._logger.warning(f"Pedestrian {name} not found in ped_dict")
+                self._logger.warning(f"Pedestrian {name} not found in ped_dict: {list(self.ped_dict.keys())}")
                 return False
 
-            nav_ped = NavPed()
-            nav_ped.path = (
-                self._NS_PEDESTRIAN(name, "ManRoot", self.ped_dict[name].replace("original_", ""))
-            )
-            nav_ped.goal_pose = [ped.pose.position.x, ped.pose.position.y, 0.0]
-            nav_ped.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
-            req.nav_list.append(nav_ped)
+            goal = PedestrianGoal()
+            goal.name = self._NS_PEDESTRIAN(name, "ManRoot", self.ped_dict[name])
+            goal.position = ped.pose.position
+            goal.velocity = np.linalg.norm([ped.twist.linear.x, ped.twist.linear.y])
+            req.goals.append(goal)
             return True
 
-        results = tuple(map(impl, pedestrians.pedestrians))
+        preflight = tuple(map(impl, pedestrians.pedestrians))
+        results = self._services.NavigatePedestrians.client.call(req).ret
 
-        self.services.move_pedestrians.client.call(req)
-        return results
+        return (a and b for a, b in zip(preflight, results))
+
+    def _delete_entity(self, name: str) -> bool:
+        self._logger.debug(f"Attempting to delete prim {name}")
+
+        res = self._services.DeletePrims.client.call(
+            DeletePrims.Request(
+                names=[name]
+            )
+        )
+
+        return res.ret[0]
+
+    def _delete_all_pedestrians(self, prim_path):
+        self._logger.info(f"Attempting to delete prim named {prim_path}")
+
+        res = self._services.DeleteAllPedestrians.client.call(
+            DeletePrims.Request(names=[prim_path])
+        )
+
+        return res.ret[0]
+
+    def _move_entity(self, name, pose):
+        self._logger.debug(f"Attempting to move entity: {name}")
+        self._logger.debug(f"position: {pose.position.x,pose.position.y}")
+        self._logger.debug(f"orientation: {pose.orientation}")
+
+        if name in self.ped_dict:
+            name = os.path.join('pedestrians', name)
+
+        response = self._services.EditPrims.client.call(
+            EditPrims.Request(
+                prims=[
+                    Prim(
+                        name=name,
+                        pose=pose.to_msg(),
+                    )
+                ],
+                pose=True,
+            )
+        )
+
+        return response.ret[0]
 
     def _init_service_clients(self):
         """
@@ -646,31 +653,20 @@ class IsaacSimulator(BaseSim):
         self._logger.info("Initializing service clients...")
 
         # Define services with their corresponding client attributes
-        self.services = _Services(
-            urdf_to_usd=_Service(type_=UrdfToUsd, name="isaac/urdf_to_usd"),
-            import_usd=_Service(type_=ImportUsd, name="isaac/import_usd"),
-            delete_prim=_Service(type_=DeletePrim, name="isaac/delete_prim"),
-            get_prim_attributes=_Service(type_=GetPrimAttributes, name="isaac/get_prim_attributes"),
-            move_prim=_Service(type_=MovePrim, name="isaac/move_prim"),
-            spawn_wall=_Service(type_=SpawnWall, name="isaac/spawn_wall"),
-            spawn_floor=_Service(type_=SpawnFloor, name='isaac/spawn_floor'),
-            spawn_door=_Service(type_=SpawnDoor, name="isaac/spawn_door"),
-            import_obstacle=_Service(type_=ImportObstacles, name="isaac/import_obstacle"),
-            import_pedestrians=_Service(type_=Pedestrian, name="isaac/spawn_pedestrian"),
-            move_pedestrians=_Service(type_=MovePed, name="isaac/move_pedestrians"),
-            delete_all_pedestrians=_Service(type_=DeletePrim, name="isaac/delete_all_pedestrians"),
-        )
 
-        for service in self.services:
+        for service in (service for at, service in self._services.__dict__.items() if not at.startswith('_')):
             service.client = self.node.create_client(service.type_, service.name)
             self._logger.debug(f'Waiting for service "{service.name}"...')
 
-            timeout_sec = 10.0
-            while not service.client.wait_for_service(timeout_sec=timeout_sec):
-                self._logger.warning(
-                    f'Service "{service.name}" not available after waiting {timeout_sec}s'
-                )
+            poll_interval: float = 1.0
+            shout_every: int = 30
 
+            polls: int = 0
+            while not service.client.wait_for_service(timeout_sec=poll_interval):
+                polls += 1
+                if polls % shout_every == 0:
+                    self._logger.warning(f'Service "{service.name}" not available after waiting {poll_interval * polls}s'
+                                         )
             self._logger.debug(f'Service "{service.name}" is now available.')
 
         self.ped_dict = {}
@@ -684,41 +680,3 @@ class IsaacSimulator(BaseSim):
             self._reg_pub = None
             self._logger.warning(f'Failed to create registration publisher: {e}')
         self._logger.info("All service clients initialized and available.")
-
-    def _delete_entity(self, name: str) -> bool:
-        self._logger.debug(f"Attempting to delete prim {name}")
-
-        self.services.delete_prim.client.call(
-            DeletePrim.Request(
-                name=name
-            )
-        )
-
-        return True
-
-    def _delete_all_pedestrians(self, prim_path):
-        self._logger.info(f"Attempting to delete prim named {prim_path}")
-
-        response = self.services.delete_all_pedestrians.client.call(
-            DeletePrim.Request(name=prim_path)
-        )
-
-        return True
-
-    def _move_entity(self, name, pose):
-        self._logger.debug(f"Attempting to move entity: {name}")
-        self._logger.debug(f"position: {pose.position.x,pose.position.y}")
-        self._logger.debug(f"orientation: {pose.orientation}")
-
-        if name in self.ped_dict:
-            name = os.path.join('pedestrians', name)
-
-        response = self.services.move_prim.client.call(
-            MovePrim.Request(
-                name=name,
-                pose=pose.to_msg(),
-            )
-        )
-        if response is None:
-            return False
-        return True

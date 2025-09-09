@@ -164,14 +164,14 @@ class EnvironmentManager(NodeInterface, _Realizer):
         if realized_doors:
             self._simulator.spawn_doors(realized_doors)
 
+        if floors:
+            self._logger.debug(f'spawning {len(floors)}')
+            self._simulator.spawn_floors(list(floors))
         if walls or doors:
             self._human_simulator.spawn_world(
                 tuple(map(self._realize_wall, walls)),
                 realized_doors,
             )
-        if floors:
-            self._logger.debug(f'spawning {len(floors)}')
-            self._simulator.spawn_floors(list(floors))
         self._human_simulator.spawn_obstacles(
             tuple(map(self._realize_entity, world.all_static_entities)),
             layer=ObstacleLayer.WORLD,

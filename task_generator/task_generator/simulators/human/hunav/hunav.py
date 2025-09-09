@@ -616,16 +616,11 @@ class HunavHumanSimulator(DummyHumanSimulator):
         self._wall_segments = []
 
         for i, wall in enumerate(walls):
-            dx = wall.end.x - wall.start.x
-            dy = wall.end.y - wall.start.y
-            length = math.sqrt(dx * dx + dy * dy)
-
             segment = WallSegment()
             segment.id = i
             segment.start = Point(x=wall.start.x, y=wall.start.y, z=0.0)
             segment.end = Point(x=wall.end.x, y=wall.end.y, z=0.0)
-            segment.length = length
-            segment.height = wall.height
+            segment.length = (wall.start - wall.end).norm()
 
             self._wall_segments.append(segment)
 

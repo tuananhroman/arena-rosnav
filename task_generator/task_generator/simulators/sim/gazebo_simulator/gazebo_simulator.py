@@ -288,11 +288,10 @@ class GazeboSimulator(BaseSim):
 
     def spawn_walls(self, walls) -> bool:
         self.remove_walls_doors()  # Clear existing walls
-        for wall in walls:
+        for wall in walls:  # only walls, ignore obstacles
             wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
-            # wall_positions = [(0, 0), (5, 0), (5, 5), (0, 5), (0, 0)]  # A square wall
-            wall_height = 3.0  # Wall height in meters
-            wall_thickness = 0.2  # Wall thickness in meters
+            wall_height = 2.0  # Wall height in meters
+            wall_thickness = 0.05  # Wall thickness in meters
             base_position = (0, 0, 0)  # Offset the wall to (10, 10, 0)
 
             self._logger.info(f"Attempting to spawn wall: {wall_name} from {wall.start} to {wall.end}")
