@@ -1,23 +1,43 @@
-from task_generator.tasks.obstacles import Obstacle, DynamicObstacle, CustomDynamicObstacle, Obstacles, CustomObstacles, TM_Obstacles
-import attrs
-from arena_rclpy_mixins.ROSParamServer import ROSParamT
-from arena_simulation_setup.utils.cattrs import converter
-import os
-from arena_simulation_setup.worlds.world import WorldDescription
-import json
 import itertools
-import time
-import yaml
-from google import genai
-import chromadb
-from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
-from ament_index_python.packages import get_package_share_directory
-from task_generator.tasks.obstacles.prompt_utils import ARENA_CONTEXT, BEHAVIOR_TREE_CONTEXT, LOCAL_LM, REMOTE_LM, CHROMA_DB_PATH, BT_REF_DOC_PATH, Root, process_json_doc, create_chroma_db, get_chroma_collection, get_relevant_bt_nodes
+import json
+import os
 import pprint
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from typing import Dict
+
+import attrs
+import chromadb
+import yaml
+from ament_index_python.packages import get_package_share_directory
+from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_simulation_setup.utils.cattrs import converter
+from arena_simulation_setup.worlds.world import WorldDescription
+from google import genai
+
+from task_generator.simulators.human.hunav.hunav import HunavDynamicObstacle
+from task_generator.tasks.obstacles import (
+    CustomDynamicObstacle,
+    CustomObstacles,
+    DynamicObstacle,
+    Obstacle,
+    Obstacles,
+    TM_Obstacles,
+)
+from task_generator.tasks.obstacles.prompt_utils import (
+    ARENA_CONTEXT,
+    BEHAVIOR_TREE_CONTEXT,
+    BT_REF_DOC_PATH,
+    CHROMA_DB_PATH,
+    LOCAL_LM,
+    REMOTE_LM,
+    Root,
+    create_chroma_db,
+    get_chroma_collection,
+    get_relevant_bt_nodes,
+    process_json_doc,
+)
 
 
 @attrs.define()
@@ -114,7 +134,7 @@ class TM_Prompt(TM_Obstacles):
                     delete=False
                 ) as tmp_xml_file:
                     hunav_config.update({
-                        "behavior_tree": f"/home/linh/{id}.xml"
+                        "behavior_tree": tmp_xml_file.name
                     })
                     tmp_xml_file.write(
                         ET.tostring(
@@ -124,16 +144,6 @@ class TM_Prompt(TM_Obstacles):
                             xml_declaration=True
                         ).decode("utf-8")
                     )
-
-                    with open(f"/home/linh/{id}.xml", 'w+t') as file:
-                        file.write(
-                            ET.tostring(
-                                behavior_tree_xml,
-                                encoding="UTF-8",
-                                method='xml',
-                                xml_declaration=True
-                            ).decode("utf-8")
-                        )
 
                 config["obstacles"]["dynamic"].append(hunav_config)
 
@@ -279,7 +289,7 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        with open("/home/linh/scenario.json", "w") as file:
+        with tempfile.NamedTemporaryFile(delete=False, prefix='scenario', suffix=".json", dir=os.environ["HOME"], mode='w') as file:
             json.dump(config, file)
 
         return config
