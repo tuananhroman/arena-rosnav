@@ -14,7 +14,7 @@ world_information = """
     -   - `pose`: a list [x, y, yaw] representing the object's position and rotation.
     - `description`: a human-readable name of the zone.
     In this simulation, the velocity of a pedestrian ranges between [0, 3.5], where [0, 0.3] is stationary, (0.3, 1.0] is idling, (1.0, 2.0] is normal walking and (2.0, 3.5] is running. The average crowd density ranges between [0.0, 1.0], where [0, 0.3] is sparse, (0.3, 0.6] is normal and (0.6, 1.0] is considered crowded, you can calculate this density by <total number of generated agents>/<sumation of the zones area>. Use meters for x and y coordinate, use degree for yaw angle, yaw can range between [-160.0, 160.0].
-    You should decide right the number of pedestrian first base on the user prompt and map information, then generate the pedestrians base on that number of pedestrians. 
+    You should decide right the number of pedestrian first base on the user prompt and map information, then generate the pedestrians base on that number of pedestrians.
 """
 
 # Arena format
@@ -153,7 +153,7 @@ arena_field_descriptions = """
         - `4`: renders a worker man,
         - `5`: renders a walk person
     - `group_id` (): the unique id of a group that the dynamic obstacles is in, `-1` means the obstacles doesn't belong to any group.
-    - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only: 
+    - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only:
         - "female_adult_business_02"
         - "female_adult_medical_01"
         - "female_adult_police_01"
@@ -167,7 +167,7 @@ arena_field_descriptions = """
         - "male_adult_police_04"
     - `waypoints`: a list of waypoints for the dynamic obstacle in the format [[x_1, y_1, yaw_1], ..., [x_n, y_n, yaw_n]].
     - `cyclic_goals`: whether the dynamic obstacles continue to follow the waypoints repeatedly, can be `true` or `false`.
-    - `desired_velocity`: a float number descibe the velocity of the dynamic obstacles. 
+    - `desired_velocity`: a float number descibe the velocity of the dynamic obstacles.
 
     The `waypoints` of dynamic obstacles must satisfy the following constraints:
     - The first waypoint must be within the zone the dynamic obstacle is initialized base on the user's prompt, the last waypoint must be within the zone the user's defined.
@@ -481,7 +481,7 @@ behavior_tree_descriptions = """
         - `name`: the agent's unique identifier (e.g., "hunav_1").
         - `pos`: a list [x, y, yaw] representing the object's position and rotation. You should pay attention to where the agent should be spawned and faced, place the agent within the correct zone and adjust the yaw reasonably.
         - `type`: the type of dynamic obstacle (e.g., `adult`, `child`, etc.).
-        - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only: 
+        - `model`: the type of model used for the dynamic obstacle. the type of model can be one of the following only:
             - "female_adult_business_02"
             - "female_adult_medical_01"
             - "female_adult_police_01"
@@ -533,8 +533,13 @@ behavior_tree_descriptions = """
     - Action node: Perform an action with parameters. This type of node can not have children nodes and can have one of the following IDs ["UpdateGoal", "RegularNav", "SurprisedNav", "CuriousNav", "ScaredNav", "ThreateningNav", "FindNearestAgent", "SaySomething", "SetGroupId", "SetGoal", "StopMovement", "ResumeMovement", "StopAndWaitTimerAction", "ConversationFormation", "GoTo", "ApproachAgent", "ApproachRobot", "BlockRobot", "BlockAgent", "GroupWalk", "LookAtPoint", "LookAtAgent", "LookAtRobot", "FollowAgent"].
     - Condition node: Evaluate boolean conditions, ticks if a condition is met. This type of node can not have children nodes and can have one of the following IDs["IsGoalReached", "IsRobotVisible","RandomChanceCondition","IsRobotFacingAgent","IsAgentVisible","IsRobotClose","IsAgentClose","IsAtPosition","IsAnyoneSpeaking","IsSpeaking","IsAnyoneLookingAtMe","IsLookingAtMe"].
     - "SubTree": references another BT by its ID, with parameters passed as attributes.
+
     Attributes placeholders:
     - Attributes may use placeholders in {} (e.g., {id}, {dt}) which are dynamically substituted with the agent's values during execution.
+
+    Important note:
+    - If there's any node that requires `goal_id`, you must use the node SetGoal and set the goal first.
+    - Some input ports (like `non_main_agent_ids`) require string values, even if they contain numbers. Always wrap them as a quoted string (e.g., "2,3,4") or a blackboard variable that stores a string, not an int.
 """
 
 ARENA_CONTEXT = f"""
@@ -542,7 +547,7 @@ ARENA_CONTEXT = f"""
 {arena_format}
 {arena_field_descriptions}
 {world_information}
-""" 
+"""
 
 BEHAVIOR_TREE_CONTEXT = f"""
 {instruction}

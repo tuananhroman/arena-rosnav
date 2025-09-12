@@ -1,7 +1,7 @@
 import itertools
 import json
 import os
-import pprint
+import math
 import tempfile
 import time
 import xml.etree.ElementTree as ET
@@ -89,17 +89,19 @@ class TM_Prompt(TM_Obstacles):
                 "name": zone.name,
                 "corners": [[corner.x, corner.y] for corner in zone.corners],
                 "walls": [[[wall.start.x, wall.start.y], [wall.end.x, wall.end.y]] for wall in zone.walls],
+                "entities": [
+                    {
+                        "name": entity.name,
+                        "model": entity.model.serialize(),
+                        "pose": [
+                            entity.pose.position.x,
+                            entity.pose.position.y,
+                            math.degrees(entity.pose.orientation.to_yaw()),  # I use degree for yaw for now (look at `context.py``)
+                        ]
+                    } for entity in zone.entities.static
+                ]
             }
             parsed["zones"].append(parsed_zone)
-
-        parsed["entities"] = []
-        for entity in parsed_zone.get("entities", {}).get("static", []):
-            parsed_entity = {
-                "name": entity.get("name", ""),
-                "model": entity.get("model", ""),
-                "pose": entity.get("pose", [])
-            }
-            parsed["entities"].append(parsed_entity)
 
         return json.dumps(parsed, indent=2)
 
@@ -112,7 +114,6 @@ class TM_Prompt(TM_Obstacles):
                 }
             }
 
-            tmp_dir = tempfile.TemporaryDirectory()
             for id, hunav in enumerate(llm_output.get("hunav_agents")):
                 hunav: Dict
 
@@ -127,23 +128,25 @@ class TM_Prompt(TM_Obstacles):
                 bt_root: Dict = hunav.get("bt_root")
                 behavior_tree_xml = Root.model_validate_json(json.dumps(bt_root)).to_xml()
 
-                with tempfile.NamedTemporaryFile(
+                tmp_xml_file = tempfile.NamedTemporaryFile(
                     mode='w+t',
                     suffix='.xml',
-                    dir=tmp_dir.name,
+                    dir=self.tmp_dir.name,
                     delete=False
-                ) as tmp_xml_file:
-                    hunav_config.update({
-                        "behavior_tree": tmp_xml_file.name
-                    })
-                    tmp_xml_file.write(
-                        ET.tostring(
-                            behavior_tree_xml,
-                            encoding="UTF-8",
-                            method='xml',
-                            xml_declaration=True
-                        ).decode("utf-8")
-                    )
+                )
+
+                tmp_xml_file.write(
+                    ET.tostring(
+                        behavior_tree_xml,
+                        encoding="UTF-8",
+                        method='xml',
+                        xml_declaration=True
+                    ).decode("utf-8")
+                )
+
+                hunav_config.update({
+                    "behavior_tree": tmp_xml_file.name
+                })
 
                 config["obstacles"]["dynamic"].append(hunav_config)
 
@@ -188,7 +191,8 @@ class TM_Prompt(TM_Obstacles):
                 self.cached_context.update({"bt": cache.name})
 
             bt_nodes = get_relevant_bt_nodes(
-                query=f"What are the nodes should be used for creating the behavior tree as described below: \"{prompt}\"",
+                query=f"What are the nodes should be used for creating the behavior tree as described below: \"{prompt}\". \
+                    Note that if there's any node related to navigation, you must retrieve the node SetGoal.",
                 collection=self.chroma_collection,
             )
 
@@ -310,12 +314,13 @@ class TM_Prompt(TM_Obstacles):
         dynamic_obstacles: list[DynamicObstacle]
 
         static_obstacles = [
-            Obstacle.parse(obs)
-            for obs
-            in itertools.chain(
-                config.get("obstacles", {}).get("static", []),
-                config.get("obstacles", {}).get("interactive", []),
-            )
+            # Obstacle.parse(obs)
+            # for obs
+            # in itertools.chain(
+            #     config.get("obstacles", {}).get("static", []),
+            #     config.get("obstacles", {}).get("interactive", []),
+            # )
+            # This causes bug so temporarily disabled
         ]
 
         dynamic_obstacles = [
@@ -393,3 +398,5 @@ class TM_Prompt(TM_Obstacles):
         )
 
         self.cached_context: Dict[str, str] = {}  # Whether the prompt context need to be changed and fed into LLM model
+
+        self.tmp_dir = tempfile.TemporaryDirectory()  # Temporary directory to store behavior tree XML files

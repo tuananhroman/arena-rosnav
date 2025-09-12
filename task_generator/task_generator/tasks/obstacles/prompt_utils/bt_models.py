@@ -1,7 +1,20 @@
-from abc import ABC, abstractmethod
+from abc import ABC
 import xml.etree.ElementTree as ET
-from typing import Dict, List, Optional, Union, Literal, Any
-from pydantic import BaseModel
+from typing import Dict, List, Optional, Union, Literal, Any, Annotated
+from pydantic import BaseModel, Field, field_validator
+
+
+CONTROL_NODE_ID_MAP = {}
+
+DECORATION_NODE_ID_MAP = {
+    "TimeDelayDecorator": "TimeDelay"
+}
+
+ACTION_NODE_ID_MAP = {
+    "GroupWalk": "SetGroupWalk",
+}
+
+CONDITION_NODE_ID_MAP = {}
 
 
 # TreeNodesModel
@@ -14,9 +27,9 @@ class InputPort(BaseModel):
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
-            "input_port", 
+            "input_port",
             attrib={
-                "name": self.name, 
+                "name": self.name,
                 "type": self.type
             }
         )
@@ -26,6 +39,7 @@ class InputPort(BaseModel):
             element.text = self.description
 
         return element
+
 
 class OutputPort(BaseModel):
     name: str
@@ -48,6 +62,7 @@ class OutputPort(BaseModel):
 
         return element
 
+
 class Condition(BaseModel):
     ID: str
     input_ports: Optional[List[InputPort]] = []
@@ -60,7 +75,7 @@ class Condition(BaseModel):
                 "ID": self.ID
             }
         )
-        
+
         for ip in self.input_ports or []:
             ip: InputPort
             element.append(ip.to_xml())
@@ -68,7 +83,7 @@ class Condition(BaseModel):
         for op in self.output_port or []:
             op: OutputPort
             element.append(op.to_xml())
-        
+
         return element
 
 
@@ -76,6 +91,13 @@ class Action(BaseModel):
     ID: str
     input_ports: Optional[List[InputPort]] = []
     output_port: Optional[List[OutputPort]] = []
+
+    @field_validator("ID")
+    @classmethod
+    def normalize_id(cls, v):
+        if v in ACTION_NODE_ID_MAP:
+            return ACTION_NODE_ID_MAP[v]
+        return v
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
@@ -92,7 +114,7 @@ class Action(BaseModel):
         for op in self.output_port or []:
             op: OutputPort
             element.append(op.to_xml())
-        
+
         return element
 
 
@@ -116,6 +138,8 @@ class TreeNodesModel(BaseModel):
 
 # BehaviorTree
 # ------------
+
+
 class TreeNode(BaseModel):
     ID: str
     name: str
@@ -124,12 +148,20 @@ class TreeNode(BaseModel):
     def to_xml(self) -> ET.Element:
         ...
 
+
 class DecorationNode(TreeNode):
     ID: Literal[
         "TimeDelayDecorator",
         "RetryUntilSuccessful"
     ]
-    child_node: TreeNode
+    child_node: "NodeUnion"
+
+    @field_validator("ID")
+    @classmethod
+    def normalize_id(cls, v):
+        if v in DECORATION_NODE_ID_MAP:
+            return DECORATION_NODE_ID_MAP[v]
+        return v
 
     def to_xml(self):
         element = ET.Element(
@@ -140,7 +172,7 @@ class DecorationNode(TreeNode):
         element.append(self.child_node.to_xml())
 
         return element
-    
+
 
 class ControlNode(TreeNode):
     ID: Literal[
@@ -169,7 +201,7 @@ class LeafNode(ABC, TreeNode):
         )
 
         return element
-    
+
 
 class ActionNode(LeafNode):
     ID: Literal[
@@ -201,6 +233,13 @@ class ActionNode(LeafNode):
         "FollowAgent",
     ]
 
+    @field_validator("ID")
+    @classmethod
+    def normalize_id(cls, v):
+        if v in ACTION_NODE_ID_MAP:
+            return ACTION_NODE_ID_MAP[v]
+        return v
+
 
 class ConditionNode(LeafNode):
     ID: Literal[
@@ -220,11 +259,10 @@ class ConditionNode(LeafNode):
         "IsLookingAtMe"
     ]
 
-NodeUnion = Union[ControlNode, DecorationNode, LeafNode]
 
 class BehaviorTree(BaseModel):
     ID: str
-    child_node: NodeUnion
+    child_node: "NodeUnion"
 
     def to_xml(self) -> ET.Element:
         element = ET.Element(
@@ -238,14 +276,15 @@ class BehaviorTree(BaseModel):
 
         return element
 
+
 class Root(BaseModel):
     main_tree_to_execute: str
     BTCPP_format: str
     tree_nodes_model: TreeNodesModel
     behavior_trees: List[BehaviorTree]
-    
+
     def to_xml(
-        self, 
+        self,
         include_ros_pkg: str = "arena_simulation_setup",
         include_path: str = "configs/hunav/behavior_trees/BTRegularNav.xml"
     ) -> ET.Element:
@@ -275,10 +314,12 @@ class Root(BaseModel):
         return element
 
 
-if __name__ == "__main__":
+NodeUnion = Annotated[
+    Union[ControlNode, DecorationNode, ActionNode, ConditionNode],
+    Field(discriminator="ID")
+]
 
-    import json
-    import pprint
+if __name__ == "__main__":
     from xml.dom import minidom
     from context import behavior_tree_format
 

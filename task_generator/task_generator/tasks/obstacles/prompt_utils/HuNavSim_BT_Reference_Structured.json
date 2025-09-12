@@ -8,12 +8,6 @@
         "purpose": "Succeeds probabilistically based on a given chance.",
         "inputs": [
           {
-            "name": "agent_id",
-            "type": "int",
-            "description": "Identifier of the agent.",
-            "required": true
-          },
-          {
             "name": "probability",
             "type": "double",
             "description": "Chance of success (0.0-1.0).",
@@ -56,6 +50,12 @@
             "type": "double",
             "description": "Visibility distance threshold [m].",
             "required": true
+          },
+          {
+            "name": "field_of_view",
+            "type": "double",
+            "description": "It defines how wide the observer’s vision is. It’s value is half of field of view angle (symmetric left and right of the forward axis) [rad].",
+            "required": true
           }
         ],
         "outputs": []
@@ -93,6 +93,12 @@
             "name": "target_agent_id",
             "type": "int",
             "description": "Identifier of the target agent.",
+            "required": true
+          },
+          {
+            "name": "threshold",
+            "type": "double",
+            "description": "Distance threshold for close proximity [m].",
             "required": true
           }
         ],
@@ -353,6 +359,18 @@
             "required": true
           },
           {
+            "name": "target_x",
+            "type": "double",
+            "description": "X-Coordinate of the target goal position.",
+            "required": true
+          },
+          {
+            "name": "target_y",
+            "type": "double",
+            "description": "Y-Coordinate of the target goal position.",
+            "required": true
+          },
+          {
             "name": "goal_id",
             "type": "int",
             "description": "Goal ID of the target goal.",
@@ -437,7 +455,7 @@
           {
             "name": "non_main_agent_ids",
             "type": "string",
-            "description": "Comma‑separated list of participating agent IDs.",
+            "description": "Comma‑separated list of participating agent IDs. Must be passed as a string, e.g. \"1,2,3\" — not as {id} because {id} is an int.",
             "required": true
           }
         ],
@@ -494,18 +512,6 @@
             "name": "time_step",
             "type": "double",
             "description": "Time step for movement updates [s].",
-            "required": true
-          },
-          {
-            "name": "closest_dist",
-            "type": "double",
-            "description": "Distance at which the agent is considered to have approached sufficiently [m].",
-            "required": true
-          },
-          {
-            "name": "max_vel",
-            "type": "double",
-            "description": "Maximum velocity during the approach [m/s].",
             "required": true
           },
           {
@@ -641,7 +647,7 @@
           {
             "name": "non_main_agent_ids",
             "type": "string",
-            "description": "Comma‑separated list of the non‑main agents’ identifiers.",
+            "description": "Comma‑separated list of the non‑main agents’ identifiers. Must be passed as a string, e.g. \"1,2,3\" — not as {id} because {id} is an int.",
             "required": true
           },
           {
