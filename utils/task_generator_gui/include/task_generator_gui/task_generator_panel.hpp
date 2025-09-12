@@ -10,9 +10,8 @@
 #include <rviz_common/properties/property_tree_model.hpp>
 #include "task_generator_msgs/srv/get_environments.hpp"
 #include "task_generator_msgs/srv/get_parametrizeds.hpp"
-#include "task_generator_msgs/srv/get_randoms.hpp"
+#include "task_generator_msgs/srv/get_obstacles.hpp"
 #include "task_generator_msgs/srv/get_scenarios.hpp"
-#include "task_generator_msgs/srv/get_prompts.hpp"
 #include "task_generator_msgs/srv/get_worlds.hpp"
 #include "task_generator_msgs/srv/get_robots.hpp"
 
@@ -108,12 +107,10 @@ namespace task_generator_gui
         rclcpp::Client<task_generator_msgs::srv::GetEnvironments>::SharedPtr get_environments_client;
         // Client to get list of all available parametrizeds
         rclcpp::Client<task_generator_msgs::srv::GetParametrizeds>::SharedPtr get_parametrizeds_client;
-        // Client to get all parameters for Random Obstacles Task Mode
-        rclcpp::Client<task_generator_msgs::srv::GetRandoms>::SharedPtr get_randoms_client;
+        // Client to get all available obstacle models
+        rclcpp::Client<task_generator_msgs::srv::GetObstacles>::SharedPtr get_obstacles_client;
         // Client to get list of all available scenarios for given world
         rclcpp::Client<task_generator_msgs::srv::GetScenarios>::SharedPtr get_scenarios_client;
-        // Client to get list of default parameters of Prompt Obstacles Task Mode
-        rclcpp::Client<task_generator_msgs::srv::GetPrompts>::SharedPtr get_prompts_client;
         // Client to get list of all available worlds
         rclcpp::Client<task_generator_msgs::srv::GetWorlds>::SharedPtr get_worlds_client;
         // Client to get list of all available robots models
@@ -137,13 +134,13 @@ namespace task_generator_gui
         std::vector<std::string> worlds;
 
         // Parameters for Obstacles Task Mode = "Random"
-        std::vector<std::int64_t, std::allocator<std::int64_t>> n_static_obstacles_range, n_interactive_obstacles_range, n_dynamic_obstacles_range;
+        std::vector<std::int64_t, std::allocator<std::int64_t>> n_static_obstacles_range, n_dynamic_obstacles_range;
         // Parameters for Obstacles Task Mode = "Random"
-        std::vector<std::string> static_obstacles_all_models, interactive_obstacles_all_models, dynamic_obstacles_all_models;
+        std::vector<std::string> static_obstacles_all_models, dynamic_obstacles_all_models;
         // Selected obstacles models
-        std::vector<std::string> static_obstacles_models, interactive_obstacles_models, dynamic_obstacles_models;
+        std::vector<std::string> static_obstacles_models, dynamic_obstacles_models;
         // Hash map for seletected obstacles models
-        std::vector<int> static_obstacles_models_selected, interactive_obstacles_models_selected, dynamic_obstacles_models_selected;
+        std::vector<int> static_obstacles_models_selected, dynamic_obstacles_models_selected;
 
         // Parameters for Obstacles Task Mode = "Environment" or "Parametrized" or "Scenario" or "Prompt"
         std::vector<std::string> environment_config_files;
@@ -175,7 +172,6 @@ namespace task_generator_gui
         QPushButton *reset_scenario_button;
         QPushButton *spawn_robot_button;
         MultiSelectComboBox *static_obstacles_models_groupbox;
-        MultiSelectComboBox *interactive_obstacles_models_groupbox;
         MultiSelectComboBox *dynamic_obstacles_models_groupbox;
 
     private Q_SLOTS:

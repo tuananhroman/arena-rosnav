@@ -221,17 +221,12 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         response.parametrizeds = arena_simulation_setup.configs.parametrized.Parametrized.list()
         return response
 
-    def _cb_get_randoms(
+    def _cb_get_obstacles(
         self,
-        request: task_generator_msgs.srv.GetRandoms.Request,
-        response: task_generator_msgs.srv.GetRandoms.Response,
+        request: task_generator_msgs.srv.GetObstacles.Request,
+        response: task_generator_msgs.srv.GetObstacles.Response,
     ):
-        response.n_static_obstacles = [5, 15]
-        response.n_interactive_obstacles = [0, 0]
-        response.n_dynamic_obstacles = [1, 5]
-
         response.models_static_obstacles = arena_simulation_setup.entities.obstacles.static.ObstacleModel.list()
-        response.models_interactive_obstacles = []
         response.models_dynamic_obstacles = arena_simulation_setup.entities.obstacles.dynamic.DynamicObstacleModel.list()
 
         return response
@@ -244,17 +239,6 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         response.scenarios = arena_simulation_setup.worlds.World(
             request.world or self._world_manager.world_name
         ).scenario.list()
-        return response
-    
-    def _cb_get_prompts(
-        self,
-        request: task_generator_msgs.srv.GetPrompts.Request,
-        response: task_generator_msgs.srv.GetPrompts.Response,
-    ):
-        response.user_prompt = "An empty space with no pedestrian."
-        response.top_p = 0.3
-        response.behavior_tree = False
-
         return response
 
     def _cb_get_worlds(
@@ -294,21 +278,15 @@ class TaskGenerator(NodeInterface.Taskgen_T):
         )
 
         self.create_service(
-            task_generator_msgs.srv.GetRandoms,
-            self.service_namespace('get_randoms'),
-            self._cb_get_randoms
+            task_generator_msgs.srv.GetObstacles,
+            self.service_namespace('get_obstacles'),
+            self._cb_get_obstacles
         )
 
         self.create_service(
             task_generator_msgs.srv.GetScenarios,
             self.service_namespace('get_scenarios'),
             self._cb_get_scenarios
-        )
-
-        self.create_service(
-            task_generator_msgs.srv.GetPrompts,
-            self.service_namespace('get_prompts'),
-            self._cb_get_prompts
         )
 
         self.create_service(
