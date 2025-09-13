@@ -539,7 +539,7 @@ behavior_tree_descriptions = """
 
     Important note:
     - If there's any node that requires `goal_id`, you must use the node SetGoal and set the goal first.
-    - Some input ports (like `non_main_agent_ids`) require string values, even if they contain numbers. Always wrap them as a quoted string (e.g., "2,3,4") or a blackboard variable that stores a string, not an int.
+    - Every behavior tree node that has port `non_main_agent_ids`, the value of this port must be passed as a string, e.g. \"1,2,3\" — never as \"{id}\" because \"{id}\" is an int. Read the port description carefully.
 """
 
 ARENA_CONTEXT = f"""
