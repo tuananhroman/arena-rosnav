@@ -39,6 +39,8 @@ from task_generator.tasks.obstacles.prompt_utils import (
     process_json_doc,
 )
 
+DEBUG: bool = bool(os.environ.get("ARENA_DEBUG", True))  # TODO change to false
+
 
 @attrs.define()
 class _ParsedConfig:
@@ -293,8 +295,10 @@ class TM_Prompt(TM_Obstacles):
             self.node.get_logger().error("Returning empty config!")
             config = {}
 
-        with tempfile.NamedTemporaryFile(delete=False, prefix='scenario', suffix=".json", dir=os.environ["HOME"], mode='w') as file:
-            json.dump(config, file)
+        if DEBUG:
+            with tempfile.NamedTemporaryFile(delete=False, prefix='scenario', suffix=".json", dir=os.environ["HOME"], mode='w') as file:
+                json.dump(config, file)
+            self.node.get_logger().warning(f"Saved LLM output to {file.name}")
 
         return config
 
@@ -330,6 +334,14 @@ class TM_Prompt(TM_Obstacles):
         ]
 
         result = converter.structure(dict(static=static_obstacles, dynamic=dynamic_obstacles), _ParsedConfig)
+
+        if DEBUG:
+            target_dir = os.path.join(os.environ["HOME"], 'scenarios', f"{int(time.time())}_{prompt[:30]}")
+            os.makedirs(target_dir, exist_ok=True)
+            with open(os.path.join(target_dir, 'scenario.json'), 'w') as file:
+                json.dump({'obstacles': converter.unstructure(result)}, file, indent=2)
+            self.node.get_logger().warning(f"Saved parsed prompt result to {target_dir}")
+
         # import attrs
         # self._logger.warning("Final result:")
         # self._logger.warning(pprint.pformat(attrs.asdict(result)))
