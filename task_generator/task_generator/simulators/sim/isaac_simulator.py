@@ -45,6 +45,7 @@ from task_generator.shared import (
     Robot,
 )
 from task_generator.simulators.sim import NodeInterface, BaseSim
+from isaac_utils.managers.elevator_manager import elevator_manager
 
 
 @attrs.define()
@@ -67,25 +68,24 @@ class _Service:
 
 class IsaacSimulator(BaseSim):
     def spawn_elevators(self, elevators) -> bool:
-        req = SpawnElevators.Request()
-        for elevator in elevators:
-            req.elevators.append(
-                Elevator(
-                    name=elevator.name,
-                    position=elevator.position,
-                    size=elevator.size,
-                    height_min=elevator.height_min,
-                    height_max=elevator.height_max,
-                    material=elevator.material,
+            req = SpawnElevators.Request()
+            for elevator in elevators:
+                req.elevators.append(
+                    Elevator(
+                        name=elevator.name,
+                        position=elevator.position,
+                        size=elevator.size,
+                        height_min=elevator.height_min,
+                        height_max=elevator.height_max,
+                        material=elevator.material,
+                    )
                 )
-            )
-        # Call the batch elevator service via the registry
-        result = self._services.SpawnElevators.client.call(req)
-        if not all(result.ret):
-            self._logger.error("Failed to spawn one or more elevators")
-            return False
-        self._logger.info("All elevators spawned successfully.")
-        return True
+            result = self._services.SpawnElevators.client.call(req)
+            if not all(result.ret):
+                print("Failed to spawn one or more elevators")
+                return False
+            print("All elevators spawned successfully.")
+            return True
 
     _NS_PRIM = Namespace('Obstacles')
     _NS_PEDESTRIAN = Namespace('Pedestrians')
@@ -117,14 +117,14 @@ class IsaacSimulator(BaseSim):
         NodeInterface.__init__(self)
         super().__init__(namespace)
 
-        self._logger.info(f"Initializing IsaacSimulator with namespace: {namespace}")
-
-        self._init_service_clients()
         self.wall_counter = itertools.count()
         self.floor_counter = itertools.count()
         self._spawned_doors = []
-        self._init_odom_cache()
-        self._logger.info("Done initializing Isaac Sim")
+
+        self._init_service_clients()
+
+        if hasattr(self, 'node') and self.node is not None:
+            self._logger.info(f"IsaacSimulator initialized with namespace: {namespace}")
 
     def robot_spawn(self, robots):
         def impl(robot: Robot) -> bool:
@@ -477,33 +477,55 @@ class IsaacSimulator(BaseSim):
         """
         Initialize all ROS 2 service clients and wait for their availability.
         """
-        self._logger.info("Initializing service clients...")
+        if hasattr(self, 'node') and self.node is not None:
+            logger = self._logger
+            logger.info("Initializing service clients...")
+        else:
+            logger = None
+            print("Initializing service clients...")
 
         # Define services with their corresponding client attributes
-
         for service in (service for at, service in self._services.__dict__.items() if not at.startswith('_')):
-            service.client = self.node.create_client(service.type_, service.name)
-            self._logger.debug(f'Waiting for service "{service.name}"...')
+            service.client = self.node.create_client(service.type_, service.name) if hasattr(self, 'node') and self.node is not None else None
+            if logger:
+                logger.debug(f'Waiting for service "{service.name}"...')
+            else:
+                print(f'Waiting for service "{service.name}"...')
 
             poll_interval: float = 1.0
             shout_every: int = 30
 
             polls: int = 0
-            while not service.client.wait_for_service(timeout_sec=poll_interval):
-                polls += 1
-                if polls % shout_every == 0:
-                    self._logger.warning(f'Service "{service.name}" not available after waiting {poll_interval * polls}s'
-                                         )
-            self._logger.debug(f'Service "{service.name}" is now available.')
+            if service._client is not None:
+                while not service._client.wait_for_service(timeout_sec=poll_interval):
+                    polls += 1
+                    if polls % shout_every == 0:
+                        if logger:
+                            logger.warning(f'Service "{service.name}" not available after waiting {poll_interval * polls}s')
+                        else:
+                            print(f'Service "{service.name}" not available after waiting {poll_interval * polls}s')
+                if logger:
+                    logger.debug(f'Service "{service.name}" is now available.')
+                else:
+                    print(f'Service "{service.name}" is now available.')
 
         self.ped_dict = {}
 
         # Publisher for external registration messages so IsaacSim's DoorManager
         # can be informed about spawned entities in the IsaacSim process.
         try:
-            self._reg_pub = self.node.create_publisher(StdString, '/isaac/register_entity', 10)
-            self._logger.info('Created /isaac/register_entity publisher')
+            self._reg_pub = self.node.create_publisher(StdString, '/isaac/register_entity', 10) if hasattr(self, 'node') and self.node is not None else None
+            if logger:
+                logger.info('Created /isaac/register_entity publisher')
+            else:
+                print('Created /isaac/register_entity publisher')
         except Exception as e:
             self._reg_pub = None
-            self._logger.warning(f'Failed to create registration publisher: {e}')
-        self._logger.info("All service clients initialized and available.")
+            if logger:
+                logger.warning(f'Failed to create registration publisher: {e}')
+            else:
+                print(f'Failed to create registration publisher: {e}')
+        if logger:
+            logger.info("All service clients initialized and available.")
+        else:
+            print("All service clients initialized and available.")
