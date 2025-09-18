@@ -34,7 +34,6 @@ from isaacsim_msgs.srv import (
     SpawnUrdf,
     SpawnUsd,
     SpawnWalls,
-    SpawnWall,
 )
 from std_msgs.msg import String as StdString
 
@@ -204,7 +203,6 @@ class IsaacSimulator(BaseSim):
         SpawnUrdf = _Service(type_=SpawnUrdf, name="isaac/SpawnUrdf")
         SpawnUsd = _Service(type_=SpawnUsd, name="isaac/SpawnUsd")
         SpawnWalls = _Service(type_=SpawnWalls, name="isaac/SpawnWalls")
-        SpawnElevator = _Service(type_=SpawnElevator, name="isaac/SpawnElevator")
         SpawnElevators = _Service(type_=SpawnElevators, name="isaac/SpawnElevators")
 
     def __init__(self, namespace):
