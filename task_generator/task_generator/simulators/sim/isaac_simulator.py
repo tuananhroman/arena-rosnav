@@ -95,18 +95,19 @@ class IsaacSimulator(BaseSim):
         self._logger.info(f"Subscribed to odometry for robot {robot_name} on topic {topic}")
 
     def spawn_elevators(self, elevators) -> bool:
-        self._elevator_dict = {}
+        req = SpawnElevator.Request()
         for elevator in elevators:
-            self.services.spawn_elevator.client.call(
-                SpawnElevator.Request(
-                    name=elevator.name,
-                    position=elevator.position,
-                    size=elevator.size,
-                    height_min=elevator.height_min,
-                    height_max=elevator.height_max,
-                    material=elevator.material,
-                )
-            )
+            req.name = elevator.name
+            req.position = elevator.position
+            req.size = elevator.size
+            req.height_min = elevator.height_min
+            req.height_max = elevator.height_max
+            req.material = elevator.material
+            # Call the elevator service via the registry
+            result = self._services.SpawnElevator.client.call(req)
+            if not result.ret:
+                self._logger.error(f"Failed to spawn elevator {elevator.name}")
+                return False
             self._elevator_dict[elevator.name] = elevator
         # Build elevator pairs by destination
         self._elevator_pairs = []
@@ -132,10 +133,10 @@ class IsaacSimulator(BaseSim):
         for pair in getattr(self, '_elevator_pairs', []):
             for robot in getattr(self, '_robots', []):
                 robot_name = robot.name if hasattr(robot, 'name') else str(robot)
-                self.register_robot_for_odom(robot_name)
                 robot_pose = self.get_robot_pose(robot_name)
                 if robot_pose is None:
                     continue
+                # Track cooldown and last platform for each robot
                 state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'was_on': None})
                 last_tp = state.get('last_tp', 0)
                 was_on = state.get('was_on', None)
@@ -154,16 +155,6 @@ class IsaacSimulator(BaseSim):
                     # Still on a platform, do not allow teleport
                     pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'a' if on_a else 'b' if on_b else 'none'}
 
-    def _robot_on_platform(self, robot_pose, platform):
-        px, py, pz = platform['position']
-        sx, sy, sz = platform['size']
-        rx, ry, rz = robot_pose
-        return (
-            abs(rx - px) <= sx / 2 and
-            abs(ry - py) <= sy / 2 and
-            abs(rz - pz) <= max(sz / 2, 0.5)
-        )
-
     def get_robot_pose(self, robot_name):
         # Returns latest odometry for robot_name, or None if not available
         if not hasattr(self, '_odom_cache'):
@@ -173,15 +164,17 @@ class IsaacSimulator(BaseSim):
     def teleport_robot(self, robot_name, position):
         # Actually move the robot prim in IsaacSim using MovePrim service
         try:
+            from isaacsim_msgs.srv import MovePrim
             req = MovePrim.Request()
             req.name = robot_name
             req.position = position
             fut = self.services.move_prim.client.call_async(req)
+            import rclpy
             rclpy.spin_until_future_complete(self.node, fut)
             if not fut.result() or not fut.result().ret:
-                self._logger.error(f"Failed to teleport robot {robot_name}")
-                return False
-            self._logger.info(f"Teleported robot {robot_name} to {position}")
+                self._logger.warning(f"Failed to teleport robot {robot_name} to {position}")
+            else:
+                self._logger.info(f"Teleported robot {robot_name} to {position}")
             return True
         except Exception as e:
             self._logger.error(f"teleport_robot failed for {robot_name}: {e}")
@@ -206,6 +199,7 @@ class IsaacSimulator(BaseSim):
         SpawnUrdf = _Service(type_=SpawnUrdf, name="isaac/SpawnUrdf")
         SpawnUsd = _Service(type_=SpawnUsd, name="isaac/SpawnUsd")
         SpawnWalls = _Service(type_=SpawnWalls, name="isaac/SpawnWalls")
+        SpawnElevator = _Service(type_=SpawnElevator, name="isaac/SpawnElevator")
 
     def __init__(self, namespace):
         """Initialize IsaacSimulator
@@ -435,36 +429,36 @@ class IsaacSimulator(BaseSim):
         return res
 
     def spawn_elevators(self, elevators) -> bool:
+        req = SpawnElevator.Request()
         for elevator in elevators:
-            self.services.spawn_elevator.client.call(
-                SpawnElevator.Request(
-                    name=elevator.name,
-                    position=elevator.position,
-                    size=elevator.size,
-                    height_min=elevator.height_min,
-                    height_max=elevator.height_max,
-                    material=elevator.material,
-                )
-            )
-            # If elevator has a linked platform, spawn it and register the pair
-            if hasattr(elevator, 'linked_position') and hasattr(elevator, 'linked_size'):
-                linked_name = f"{elevator.name}_linked"
-                self.services.spawn_elevator.client.call(
-                    SpawnElevator.Request(
-                        name=linked_name,
-                        position=elevator.linked_position,
-                        size=elevator.linked_size,
-                        height_min=elevator.height_min,
-                        height_max=elevator.height_max,
-                        material=elevator.material,
-                    )
-                )
+            req.name = elevator.name
+            req.position = elevator.position
+            req.size = elevator.size
+            req.height_min = elevator.height_min
+            req.height_max = elevator.height_max
+            req.material = elevator.material
+            # Call the elevator service via the registry
+            result = self._services.SpawnElevator.client.call(req)
+            if not result.ret:
+                self._logger.error(f"Failed to spawn elevator {elevator.name}")
+                return False
+            self._elevator_dict[elevator.name] = elevator
+        # Build elevator pairs by destination
+        self._elevator_pairs = []
+        for elevator in elevators:
+            dest = self._elevator_dict.get(getattr(elevator, 'destination', None))
+            if dest:
                 self._elevator_pairs.append({
                     'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
-                    'b': {'name': linked_name, 'position': elevator.linked_position, 'size': elevator.linked_size},
+                    'b': {'name': dest.name, 'position': dest.position, 'size': dest.size},
                     'cooldown': {},
                 })
-        self._logger.info("All elevators spawned successfully.")
+        # Register all robots for odometry
+        if hasattr(self, '_robots'):
+            for robot in self._robots:
+                robot_name = robot.name if hasattr(robot, 'name') else str(robot)
+                self.register_robot_for_odom(robot_name)
+        self._logger.info("All elevators spawned and paired successfully.")
         return True
 
     def update_elevators(self):
