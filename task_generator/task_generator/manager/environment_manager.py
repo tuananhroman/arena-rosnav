@@ -4,6 +4,7 @@ from collections.abc import Callable, Collection, Iterator, Sequence
 from typing import Any
 
 import attrs
+from arena_simulation_setup.shared import Elevator
 from arena_simulation_setup.worlds.world import WorldDescription
 
 from task_generator import NodeInterface
@@ -77,6 +78,20 @@ class _Realizer:
             end=self._realize_position(door.end),
         )
 
+    def _realize_elevator(self, elevator: Elevator) -> Elevator:
+        pos = list(elevator.position)
+        if len(pos) >= 2:
+            pos[0] += self._config.x
+            pos[1] += self._config.y
+        name = self._prefix(elevator.name)
+        destination = self._prefix(elevator.destination) if getattr(elevator, 'destination', None) else elevator.destination
+        return attrs.evolve(
+            elevator,
+            name=name,
+            position=pos,
+            destination=destination,
+        )
+
     def realize(
         self,
         target
@@ -98,6 +113,9 @@ class _Realizer:
 
         if isinstance(target, Door):
             return self._realize_door(target)
+
+        if isinstance(target, Elevator):
+            return self._realize_elevator(target)
 
         raise TypeError(f'realization not implemented for type {type(target)}')
 
@@ -158,6 +176,10 @@ class EnvironmentManager(NodeInterface, _Realizer):
             tuple(map(self._realize_entity, world.all_static_entities)),
             layer=ObstacleLayer.WORLD,
         )
+        elevators = getattr(world, "elevators", [])
+        realized_elevators = list(map(self._realize_elevator, elevators))
+        if realized_elevators:
+            self._simulator.spawn_elevators(realized_elevators)
 
     def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
         """

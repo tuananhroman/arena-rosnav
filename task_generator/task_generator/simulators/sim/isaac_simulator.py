@@ -32,6 +32,8 @@ from isaacsim_msgs.srv import (
     SpawnUrdf,
     SpawnUsd,
     SpawnWalls,
+    SpawnElevator,
+    SpawnWall,
 )
 from std_msgs.msg import String as StdString
 
@@ -64,6 +66,126 @@ class _Service:
 
 
 class IsaacSimulator(BaseSim):
+    def _init_odom_cache(self):
+        """
+        Initializes odometry cache and subscriber dict.
+        """
+        self._odom_cache = {}
+        self._odom_subs = {}
+
+    def register_robot_for_odom(self, robot_name):
+        """
+        Registers a robot for odometry updates by subscribing to /<robot_name>/odom.
+        """
+        import rclpy
+        from nav_msgs.msg import Odometry
+        if not hasattr(self, '_odom_cache'):
+            self._init_odom_cache()
+        if robot_name in self._odom_subs:
+            return
+        topic = f"/{robot_name}/odom"
+        def odom_cb(msg):
+            try:
+                pos = msg.pose.pose.position
+                self._odom_cache[robot_name] = (pos.x, pos.y, getattr(pos, 'z', 0.0))
+            except Exception as e:
+                self._logger.warning(f"odom_cb failed for {robot_name}: {e}")
+        sub = self.node.create_subscription(Odometry, topic, odom_cb, 10)
+        self._odom_subs[robot_name] = sub
+        self._logger.info(f"Subscribed to odometry for robot {robot_name} on topic {topic}")
+
+    def spawn_elevators(self, elevators) -> bool:
+        self._elevator_dict = {}
+        for elevator in elevators:
+            self.services.spawn_elevator.client.call(
+                SpawnElevator.Request(
+                    name=elevator.name,
+                    position=elevator.position,
+                    size=elevator.size,
+                    height_min=elevator.height_min,
+                    height_max=elevator.height_max,
+                    material=elevator.material,
+                )
+            )
+            self._elevator_dict[elevator.name] = elevator
+        # Build elevator pairs by destination
+        self._elevator_pairs = []
+        for elevator in elevators:
+            dest = self._elevator_dict.get(getattr(elevator, 'destination', None))
+            if dest:
+                self._elevator_pairs.append({
+                    'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
+                    'b': {'name': dest.name, 'position': dest.position, 'size': dest.size},
+                    'cooldown': {},
+                })
+        # Register all robots for odometry
+        if hasattr(self, '_robots'):
+            for robot in self._robots:
+                robot_name = robot.name if hasattr(robot, 'name') else str(robot)
+                self.register_robot_for_odom(robot_name)
+        self._logger.info("All elevators spawned and paired successfully.")
+        return True
+
+    def update_elevators(self):
+        cooldown_sec = 2.0
+        now = time.time()
+        for pair in getattr(self, '_elevator_pairs', []):
+            for robot in getattr(self, '_robots', []):
+                robot_name = robot.name if hasattr(robot, 'name') else str(robot)
+                self.register_robot_for_odom(robot_name)
+                robot_pose = self.get_robot_pose(robot_name)
+                if robot_pose is None:
+                    continue
+                state = pair['cooldown'].get(robot_name, {'last_tp': 0, 'was_on': None})
+                last_tp = state.get('last_tp', 0)
+                was_on = state.get('was_on', None)
+                on_a = self._robot_on_platform(robot_pose, pair['a'])
+                on_b = self._robot_on_platform(robot_pose, pair['b'])
+                # Only allow teleport if robot was previously off both platforms
+                if on_a and not on_b and was_on == 'none' and (now - last_tp > cooldown_sec):
+                    self.teleport_robot(robot_name, pair['b']['position'])
+                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'a'}
+                elif on_b and not on_a and was_on == 'none' and (now - last_tp > cooldown_sec):
+                    self.teleport_robot(robot_name, pair['a']['position'])
+                    pair['cooldown'][robot_name] = {'last_tp': now, 'was_on': 'b'}
+                elif not on_a and not on_b:
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'none'}
+                else:
+                    # Still on a platform, do not allow teleport
+                    pair['cooldown'][robot_name] = {'last_tp': last_tp, 'was_on': 'a' if on_a else 'b' if on_b else 'none'}
+
+    def _robot_on_platform(self, robot_pose, platform):
+        px, py, pz = platform['position']
+        sx, sy, sz = platform['size']
+        rx, ry, rz = robot_pose
+        return (
+            abs(rx - px) <= sx / 2 and
+            abs(ry - py) <= sy / 2 and
+            abs(rz - pz) <= max(sz / 2, 0.5)
+        )
+
+    def get_robot_pose(self, robot_name):
+        # Returns latest odometry for robot_name, or None if not available
+        if not hasattr(self, '_odom_cache'):
+            self._init_odom_cache()
+        return self._odom_cache.get(robot_name, None)
+
+    def teleport_robot(self, robot_name, position):
+        # Actually move the robot prim in IsaacSim using MovePrim service
+        try:
+            req = MovePrim.Request()
+            req.name = robot_name
+            req.position = position
+            fut = self.services.move_prim.client.call_async(req)
+            rclpy.spin_until_future_complete(self.node, fut)
+            if not fut.result() or not fut.result().ret:
+                self._logger.error(f"Failed to teleport robot {robot_name}")
+                return False
+            self._logger.info(f"Teleported robot {robot_name} to {position}")
+            return True
+        except Exception as e:
+            self._logger.error(f"teleport_robot failed for {robot_name}: {e}")
+            return False
 
     _NS_PRIM = Namespace('Obstacles')
     _NS_PEDESTRIAN = Namespace('Pedestrians')
@@ -96,8 +218,11 @@ class IsaacSimulator(BaseSim):
         self._logger.info(f"Initializing IsaacSimulator with namespace: {namespace}")
 
         self._init_service_clients()
-        self._wall_counter = itertools.count()
-        self._floor_counter = itertools.count()
+        self.wall_counter = itertools.count()
+        self.floor_counter = itertools.count()
+        self._spawned_doors = []
+        self._elevator_pairs = []
+        self._init_odom_cache()
         self._logger.info("Done initializing Isaac Sim")
 
     def robot_spawn(self, robots):
@@ -308,6 +433,80 @@ class IsaacSimulator(BaseSim):
         res = all(self._services.SpawnDoors.client.call(req).ret)
         self._logger.info("All doors spawned successfully.")
         return res
+
+    def spawn_elevators(self, elevators) -> bool:
+        for elevator in elevators:
+            self.services.spawn_elevator.client.call(
+                SpawnElevator.Request(
+                    name=elevator.name,
+                    position=elevator.position,
+                    size=elevator.size,
+                    height_min=elevator.height_min,
+                    height_max=elevator.height_max,
+                    material=elevator.material,
+                )
+            )
+            # If elevator has a linked platform, spawn it and register the pair
+            if hasattr(elevator, 'linked_position') and hasattr(elevator, 'linked_size'):
+                linked_name = f"{elevator.name}_linked"
+                self.services.spawn_elevator.client.call(
+                    SpawnElevator.Request(
+                        name=linked_name,
+                        position=elevator.linked_position,
+                        size=elevator.linked_size,
+                        height_min=elevator.height_min,
+                        height_max=elevator.height_max,
+                        material=elevator.material,
+                    )
+                )
+                self._elevator_pairs.append({
+                    'a': {'name': elevator.name, 'position': elevator.position, 'size': elevator.size},
+                    'b': {'name': linked_name, 'position': elevator.linked_position, 'size': elevator.linked_size},
+                    'cooldown': {},
+                })
+        self._logger.info("All elevators spawned successfully.")
+        return True
+
+    def update_elevators(self):
+        # Call this periodically (e.g., from main sim loop) to handle elevator teleportation
+        for pair in self._elevator_pairs:
+            for robot in getattr(self, '_robots', []):
+                robot_name = robot.name if hasattr(robot, 'name') else str(robot)
+                robot_pose = self.get_robot_pose(robot_name)
+                if robot_pose is None:
+                    continue
+                cooldown = pair['cooldown'].get(robot_name, False)
+                on_a = self._robot_on_platform(robot_pose, pair['a'])
+                on_b = self._robot_on_platform(robot_pose, pair['b'])
+                if on_a and not cooldown:
+                    self.teleport_robot(robot_name, pair['b']['position'])
+                    pair['cooldown'][robot_name] = True
+                elif on_b and not cooldown:
+                    self.teleport_robot(robot_name, pair['a']['position'])
+                    pair['cooldown'][robot_name] = True
+                elif not on_a and not on_b:
+                    pair['cooldown'][robot_name] = False
+
+    def _robot_on_platform(self, robot_pose, platform):
+        px, py, pz = platform['position']
+        sx, sy, sz = platform['size']
+        rx, ry, rz = robot_pose
+        return (
+            abs(rx - px) <= sx / 2 and
+            abs(ry - py) <= sy / 2 and
+            abs(rz - pz) <= max(sz / 2, 0.5)
+        )
+
+    def get_robot_pose(self, robot_name):
+        # Implement this to return [x, y, z] for the robot (from sim state or odom)
+        # Placeholder: return None
+        return None
+
+    def teleport_robot(self, robot_name, position):
+        # Implement this to set the robot's pose in the sim
+        # Placeholder: log only
+        self._logger.info(f"Teleporting robot {robot_name} to {position}")
+        # TODO: Actually move the robot prim in IsaacSim
 
     # TODO: update
     def before_reset_task(self):
