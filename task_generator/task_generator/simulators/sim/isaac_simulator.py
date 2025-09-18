@@ -244,7 +244,7 @@ class IsaacSimulator(BaseSim):
 
             for segment in segments:
                 try:
-                    wall_name = self.node._environment_manager.realize(f"wall_{next(self._wall_counter)}")
+                    wall_name = self.node._environment_manager.realize(f"wall_{next(self.wall_counter)}")
                     walls_req.walls.append(
                         Wall(
                             name=self._NS_WALL(wall_name),
@@ -264,7 +264,7 @@ class IsaacSimulator(BaseSim):
 
             for obstacle in obstacles:
                 try:
-                    prim_name = self.node._environment_manager.realize(f"obstacle_{next(self._wall_counter)}")
+                    prim_name = self.node._environment_manager.realize(f"obstacle_{next(self.wall_counter)}")
                     model = obstacle.model.get([ModelType.USD])
                     prim = Prim()
                     prim.usd_path = model.path
@@ -290,7 +290,7 @@ class IsaacSimulator(BaseSim):
         for floor in floors:
             try:
                 pos = [floor.pos.x, floor.pos.y]
-                i = next(self._floor_counter)
+                i = next(self.floor_counter)
                 req.floors.append(
                     Floor(
                         name=self._NS_FLOOR(f"floor_{i}"),
