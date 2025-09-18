@@ -14,6 +14,7 @@ import rclpy
 import rclpy.client
 from isaacsim_msgs.msg import (
     Door,
+    Elevator,
     Floor,
     Material,
     Pedestrian,
@@ -26,13 +27,13 @@ from isaacsim_msgs.srv import (
     EditPrims,
     NavigatePedestrians,
     SpawnDoors,
+    SpawnElevators,
     SpawnFloors,
     SpawnPedestrians,
     SpawnPrims,
     SpawnUrdf,
     SpawnUsd,
     SpawnWalls,
-    SpawnElevator,
     SpawnWall,
 )
 from std_msgs.msg import String as StdString
@@ -95,20 +96,24 @@ class IsaacSimulator(BaseSim):
         self._logger.info(f"Subscribed to odometry for robot {robot_name} on topic {topic}")
 
     def spawn_elevators(self, elevators) -> bool:
-        req = SpawnElevator.Request()
+        req = SpawnElevators.Request()
         for elevator in elevators:
-            req.name = elevator.name
-            req.position = elevator.position
-            req.size = elevator.size
-            req.height_min = elevator.height_min
-            req.height_max = elevator.height_max
-            req.material = elevator.material
-            # Call the elevator service via the registry
-            result = self._services.SpawnElevator.client.call(req)
-            if not result.ret:
-                self._logger.error(f"Failed to spawn elevator {elevator.name}")
-                return False
-            self._elevator_dict[elevator.name] = elevator
+            req.elevators.append(
+                Elevator(
+                    name=elevator.name,
+                    position=elevator.position,
+                    size=elevator.size,
+                    height_min=elevator.height_min,
+                    height_max=elevator.height_max,
+                    material=elevator.material,
+                )
+            )
+        # Call the batch elevator service via the registry
+        result = self._services.SpawnElevators.client.call(req)
+        if not all(result.ret):
+            self._logger.error("Failed to spawn one or more elevators")
+            return False
+        self._elevator_dict = {e.name: e for e in elevators}
         # Build elevator pairs by destination
         self._elevator_pairs = []
         for elevator in elevators:
@@ -200,6 +205,7 @@ class IsaacSimulator(BaseSim):
         SpawnUsd = _Service(type_=SpawnUsd, name="isaac/SpawnUsd")
         SpawnWalls = _Service(type_=SpawnWalls, name="isaac/SpawnWalls")
         SpawnElevator = _Service(type_=SpawnElevator, name="isaac/SpawnElevator")
+        SpawnElevators = _Service(type_=SpawnElevators, name="isaac/SpawnElevators")
 
     def __init__(self, namespace):
         """Initialize IsaacSimulator
@@ -429,20 +435,24 @@ class IsaacSimulator(BaseSim):
         return res
 
     def spawn_elevators(self, elevators) -> bool:
-        req = SpawnElevator.Request()
+        req = SpawnElevators.Request()
         for elevator in elevators:
-            req.name = elevator.name
-            req.position = elevator.position
-            req.size = elevator.size
-            req.height_min = elevator.height_min
-            req.height_max = elevator.height_max
-            req.material = elevator.material
-            # Call the elevator service via the registry
-            result = self._services.SpawnElevator.client.call(req)
-            if not result.ret:
-                self._logger.error(f"Failed to spawn elevator {elevator.name}")
-                return False
-            self._elevator_dict[elevator.name] = elevator
+            req.elevators.append(
+                Elevator(
+                    name=elevator.name,
+                    position=elevator.position,
+                    size=elevator.size,
+                    height_min=elevator.height_min,
+                    height_max=elevator.height_max,
+                    material=elevator.material,
+                )
+            )
+        # Call the batch elevator service via the registry
+        result = self._services.SpawnElevators.client.call(req)
+        if not all(result.ret):
+            self._logger.error("Failed to spawn one or more elevators")
+            return False
+        self._elevator_dict = {e.name: e for e in elevators}
         # Build elevator pairs by destination
         self._elevator_pairs = []
         for elevator in elevators:
