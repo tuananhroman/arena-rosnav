@@ -44,7 +44,7 @@ from task_generator.shared import (
     Obstacle,
     Robot,
 )
-from task_generator.simulators.sim import BaseSim
+from task_generator.simulators.sim import NodeInterface, BaseSim
 
 
 @attrs.define()
@@ -211,6 +211,7 @@ class IsaacSimulator(BaseSim):
         Args:
             namespace: Namespace for the simulator
         """
+        NodeInterface.__init__(self)
         super().__init__(namespace)
 
         self._logger.info(f"Initializing IsaacSimulator with namespace: {namespace}")
