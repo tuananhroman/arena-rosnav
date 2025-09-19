@@ -613,7 +613,7 @@ class HunavHumanSimulator(DummyHumanSimulator):
 
         return results
 
-    def _wall_to_points(self, start: Position, end: Position, spacing: float = 0.5) -> list[Point]:
+    def _wall_to_points(self, start: Position, end: Position, spacing: float = 0.01) -> list[Point]:
         points: list[Point] = []
         v = (end - start).normalized()
         for i in np.arange(0, (end - start).norm(), spacing):
