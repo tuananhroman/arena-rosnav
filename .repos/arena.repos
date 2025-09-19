@@ -6,7 +6,7 @@ repositories:
   arena/simulation-setup:
     type: git
     url: https://github.com/voshch/arena-simulation-setup.git
-    version: humble@08f5c211
+    version: humble@53f07d70
   arena/tools:
     type: git
     url: https://github.com/voshch/arena-tools.git
@@ -52,7 +52,7 @@ repositories:
   deps/hunav/hunav_sim:
     type: git
     url: https://github.com/voshch/hunav_sim.git
-    version: humble@4b6da546
+    version: humble@607d706b
   deps/hunav/people_msgs:
     type: git
     url: https://github.com/wg-perception/people.git
