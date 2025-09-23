@@ -21,7 +21,9 @@ from isaacsim_msgs.msg import (
     PedestrianGoal,
     Prim,
     Wall,
+    Scale,
 )
+from geometry_msgs.msg import Point
 from isaacsim_msgs.srv import (
     DeletePrims,
     EditPrims,
@@ -75,14 +77,28 @@ class IsaacSimulator(BaseSim):
             print(f"[DEBUG] Elevator data: {e}")
         for elevator in elevators:
             try:
+                # Convert position to geometry_msgs/Point if needed
+                pos = elevator.position
+                if isinstance(pos, (list, tuple)) and len(pos) == 3:
+                    pos = Point(x=pos[0], y=pos[1], z=pos[2])
+                # Convert size to isaacsim_msgs/Scale if needed
+                size = elevator.size
+                if isinstance(size, (list, tuple)) and len(size) == 3:
+                    size = Scale(x=size[0], y=size[1], z=size[2])
+                # Convert material to string if needed
+                material = elevator.material
+                if hasattr(material, 'name'):
+                    material = str(material.name)
+                elif not isinstance(material, str):
+                    material = str(material)
                 req.elevators.append(
                     Elevator(
                         name=elevator.name,
-                        position=elevator.position,
-                        size=elevator.size,
+                        position=pos,
+                        size=size,
                         height_min=elevator.height_min,
                         height_max=elevator.height_max,
-                        material=elevator.material,
+                        material=material,
                     )
                 )
             except Exception as ex:
