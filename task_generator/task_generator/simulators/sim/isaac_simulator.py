@@ -68,8 +68,13 @@ class _Service:
 
 class IsaacSimulator(BaseSim):
     def spawn_elevators(self, elevators) -> bool:
-            req = SpawnElevators.Request()
-            for elevator in elevators:
+        print("[DEBUG] IsaacSimulator.spawn_elevators ENTRY, elevators:", elevators)
+        req = SpawnElevators.Request()
+        print(f"[DEBUG] IsaacSimulator.spawn_elevators called with: {[e.name for e in elevators]}")
+        for e in elevators:
+            print(f"[DEBUG] Elevator data: {e}")
+        for elevator in elevators:
+            try:
                 req.elevators.append(
                     Elevator(
                         name=elevator.name,
@@ -80,12 +85,11 @@ class IsaacSimulator(BaseSim):
                         material=elevator.material,
                     )
                 )
-            result = self._services.SpawnElevators.client.call(req)
-            if not all(result.ret):
-                print("Failed to spawn one or more elevators")
-                return False
-            print("All elevators spawned successfully.")
-            return True
+            except Exception as ex:
+                print(f"[ERROR] Failed to append elevator: {elevator.name}, error: {ex}")
+        res = all(self._services.SpawnElevators.client.call(req).ret)
+        print("All elevators spawned successfully." if res else "Failed to spawn one or more elevators")
+        return res
 
     _NS_PRIM = Namespace('Obstacles')
     _NS_PEDESTRIAN = Namespace('Pedestrians')
@@ -312,7 +316,6 @@ class IsaacSimulator(BaseSim):
 
     def spawn_doors(self, doors) -> bool:
         req = SpawnDoors.Request()
-
         for door in doors:
             try:
                 req.doors.append(
@@ -325,12 +328,10 @@ class IsaacSimulator(BaseSim):
                         kind=door.kind,
                     )
                 )
-
             except Exception as e:
                 self._logger.error("Failed to spawn door")
                 self._logger.error(repr(e))
                 traceback.print_exc(file=sys.stderr)
-
         res = all(self._services.SpawnDoors.client.call(req).ret)
         self._logger.info("All doors spawned successfully.")
         return res

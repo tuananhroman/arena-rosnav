@@ -176,9 +176,11 @@ class EnvironmentManager(NodeInterface, _Realizer):
             tuple(map(self._realize_entity, world.all_static_entities)),
             layer=ObstacleLayer.WORLD,
         )
-        elevators = getattr(world, "elevators", [])
+        elevators = list(world.all_elevators)
+        print(f"[DEBUG] Raw elevators from world (all zones): {elevators}")
         realized_elevators = list(map(self._realize_elevator, elevators))
         if realized_elevators:
+            print(f"[DEBUG] Realized elevators for world: {[e.name for e in realized_elevators]}")
             self._simulator.spawn_elevators(realized_elevators)
 
     def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):
