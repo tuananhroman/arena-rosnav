@@ -1,6 +1,7 @@
 from typing import Any, Callable, List, Tuple, Type, Union
 
 import gym
+import rclpy
 import rosnav_rl
 from rosnav_rl.utils.rostopic import Namespace
 from stable_baselines3.common.utils import set_random_seed
@@ -93,6 +94,42 @@ def _init_env_fnc(
     return _init_env
 
 
+def _test_init_env_fnc(
+    env_class: gym.Env,
+    ns: Union[str, Namespace],
+    space_manager: rosnav_rl.BaseSpaceManager,
+    reward_function: rosnav_rl.RewardFunction,
+    simulation_state_container: rosnav_rl.SimulationStateContainer,
+    max_steps_per_episode: int,
+    node: SupervisorNode = None,
+    init_by_call: bool = False,
+    obs_unit_kwargs: dict = None,
+    seed: int = 0,
+    wrappers: List[Callable[[Tuple[Type[gym.Wrapper], Any]], gym.Wrapper]] = None,
+) -> callable:
+
+    def _init_env() -> Union[gym.Env, gym.Wrapper]:
+        # Create a new node in each worker process
+        # rclpy.init()  # Initialize ROS in worker process
+        # local_node = SupervisorNode(node_name=f"{node_name}_env")
+        env = env_class(
+            node=node,
+            ns=ns,
+            space_manager=space_manager,
+            reward_function=reward_function,
+            simulation_state_container=simulation_state_container,
+            max_steps_per_episode=max_steps_per_episode,
+            init_by_call=init_by_call,
+            obs_unit_kwargs=obs_unit_kwargs,
+        )
+        for wrapper in wrappers or []:
+            env = wrapper(env)
+        return env
+
+    set_random_seed(seed)
+    return _init_env
+
+
 def sb3_wrap_env(
     node: SupervisorNode,
     train_env_fncs: List[callable],
@@ -118,15 +155,12 @@ def sb3_wrap_env(
         Tuple[VecEnv, VecEnv]: The wrapped training and evaluation environments.
     """
 
-    def create_train_env():
+    def create_env(fncs):
         return (
-            DelayedSubprocVecEnv(train_env_fncs, start_method="fork")
+            DelayedSubprocVecEnv(fncs, start_method="fork")
             if not general_cfg.debug_mode
-            else DummyVecEnv(train_env_fncs)
+            else DummyVecEnv(fncs)
         )
-
-    def create_eval_env():
-        return DummyVecEnv(eval_env_fncs)
 
     def apply_vec_stats_recorder(env: VecEnv) -> VecEnv:
         return (
@@ -154,8 +188,8 @@ def sb3_wrap_env(
             else env
         )
 
-    train_env = create_train_env()
-    eval_env = train_env
+    train_env = create_env(train_env_fncs)
+    eval_env = create_env(eval_env_fncs)
 
     # train_env = apply_vec_framestack(train_env)
     # eval_env = apply_vec_framestack(eval_env)
@@ -163,23 +197,23 @@ def sb3_wrap_env(
     # train_env = apply_vec_normalize(train_env, is_training=True)
     # eval_env = apply_vec_normalize(eval_env, is_training=False)
 
-    # train_env = apply_vec_stats_recorder(train_env)
-    # eval_env = apply_vec_stats_recorder(eval_env)
+    train_env = apply_vec_stats_recorder(train_env)
+    eval_env = apply_vec_stats_recorder(eval_env)
 
-    # train_env = apply_profiling(train_env)
-    # eval_env = apply_profiling(eval_env, enable_subscribers=False)
+    train_env = apply_profiling(train_env)
+    eval_env = apply_profiling(eval_env, enable_subscribers=False)
 
     return train_env, eval_env
 
 
 def make_envs(
-    node: SupervisorNode,
     rl_agent: rosnav_rl.RL_Agent,
     simulation_state_container: rosnav_rl.SimulationStateContainer,
     n_envs: int,
     max_steps: int,
     init_env_by_call: bool,
     namespace_fn: Callable,  # Changed from callable
+    node: SupervisorNode = None,
     wrappers: List[Callable[[Tuple[Type[gym.Wrapper], Any]], gym.Wrapper]] = None,
 ) -> List[Callable]:
     """
@@ -207,7 +241,7 @@ def make_envs(
         max_steps: int,
         init_env_by_call: bool,
     ) -> callable:
-        return _init_env_fnc(
+        return _test_init_env_fnc(
             node=node,
             env_class=determine_env_class(
                 None
