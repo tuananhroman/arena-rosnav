@@ -56,7 +56,7 @@ def _worker(
             elif cmd == "is_wrapped":
                 remote.send(is_wrapped(env, data))
             elif cmd == "init":
-                remote.send(env.init())
+                remote.send(env._initialize_environment())
             else:
                 raise NotImplementedError(f"`{cmd}` is not implemented in the worker")
         except EOFError:
