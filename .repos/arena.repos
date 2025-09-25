@@ -6,7 +6,7 @@ repositories:
   arena/simulation-setup:
     type: git
     url: https://github.com/voshch/arena-simulation-setup.git
-    version: humble@53f07d70
+    version: rosnav_rl
   arena/tools:
     type: git
     url: https://github.com/voshch/arena-tools.git
@@ -67,3 +67,9 @@ repositories:
     type: git
     url: https://github.com/turtlebot/turtlebot4_simulator.git
     version: humble
+
+#  planners/rosnav_rl:
+#    type: git
+#    url: https://github.com/Arena-Rosnav/rosnav-rl.git
+#    version: humble
+    
