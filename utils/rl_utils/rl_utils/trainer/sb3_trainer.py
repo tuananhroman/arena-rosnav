@@ -148,24 +148,32 @@ class StableBaselines3Trainer(ArenaTrainer):
         """
 
         train_env_fncs = make_envs(
-            node=self._supervisor_node,
+            node=(
+                self._supervisor_node
+                if self.config.arena_cfg.general.debug_mode
+                else None
+            ),
             rl_agent=self.agent,
             n_envs=self.config.arena_cfg.general.n_envs,
             max_steps=self.config.arena_cfg.general.max_num_moves_per_eps,
             init_env_by_call=not self.config.arena_cfg.general.debug_mode,
-            namespace_fn=lambda _: "/task_generator_node/jackal",
+            namespace_fn=lambda id: f"/task_generator_node_{id}/env{id}_jackal",
             simulation_state_container=self.simulation_state_container,
-            wrappers=[partial(TimeSyncWrapper, control_hz=1)],
+            # wrappers=[partial(TimeSyncWrapper, control_hz=1)],
         )
         eval_env_fncs = make_envs(
-            node=self._supervisor_node,
+            node=(
+                self._supervisor_node
+                # if self.config.arena_cfg.general.debug_mode
+                # else None
+            ),
             rl_agent=self.agent,
-            n_envs=1,
-            namespace_fn=lambda _: "/task_generator_node/jackal",
+            n_envs=self.config.arena_cfg.general.n_envs,
+            namespace_fn=lambda id: f"/task_generator_node_{id}/env{id}_jackal",
             max_steps=self.config.arena_cfg.callbacks.periodic_evaluation.max_num_moves_per_eps,
             init_env_by_call=False,
             simulation_state_container=self.simulation_state_container,
-            wrappers=[partial(TimeSyncWrapper, control_hz=1)],
+            # wrappers=[partial(TimeSyncWrapper, control_hz=1)],
         )
         train_env, eval_env = sb3_wrap_env(
             node=self._supervisor_node,
@@ -199,13 +207,14 @@ class StableBaselines3Trainer(ArenaTrainer):
             not self.config.arena_cfg.general.debug_mode
             and self.config.arena_cfg.monitoring.wandb
         ):
-            setup_wandb(
-                run_name=self.config.agent_cfg.name,
-                group=self.config.agent_cfg.framework.algorithm.architecture_name,
-                config=self.config,
-                to_watch=[self.agent.model.model.policy],
-                agent_id=self.config.agent_cfg.name,
-            )
+            pass
+            # setup_wandb(
+            #     run_name=self.config.agent_cfg.name,
+            #     group=self.config.agent_cfg.framework.algorithm.architecture_name,
+            #     config=self.config,
+            #     to_watch=[self.agent.model.model.policy],
+            #     agent_id=self.config.agent_cfg.name,
+            # )
 
     def _train_impl(self, *args, **kwargs) -> None:
         """Implementation of training logic."""

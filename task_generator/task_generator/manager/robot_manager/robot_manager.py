@@ -68,7 +68,7 @@ class RobotManager(NodeInterface):
         robot: Robot,
     ):
         NodeInterface.__init__(self)
-        self._rate_setup = self.node.create_rate(.1)
+        self._rate_setup = self.node.create_rate(0.1)
 
         self._namespace = namespace
         self._entity_manager = entity_manager
@@ -80,7 +80,9 @@ class RobotManager(NodeInterface):
 
         # Parameter handling
         try:
-            self._goal_tolerance_distance = self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
+            self._goal_tolerance_distance = (
+                self.node.conf.Robot.GOAL_TOLERANCE_RADIUS.value
+            )
             self._goal_tolerance_angle = self.node.conf.Robot.GOAL_TOLERANCE_ANGLE.value
             self._safety_distance = self.node.conf.Robot.SPAWN_ROBOT_SAFE_DIST.value
         except Exception as e:
@@ -91,7 +93,7 @@ class RobotManager(NodeInterface):
             print(f"Warning: Using default values for robot parameters: {e}")
 
         self._robot = robot
-        self._robot.extra.setdefault('namespace', self.namespace)
+        self._robot.extra.setdefault("namespace", self.namespace)
         self._pose = self._start_pos
         self._goal_timer = None
 
@@ -109,7 +111,7 @@ class RobotManager(NodeInterface):
                             )
                         )
                     ),
-                )
+                ),
             )
         )
 
@@ -122,25 +124,19 @@ class RobotManager(NodeInterface):
         )
 
         self.node.create_subscription(
-            nav_msgs.Odometry,
-            self.namespace("odom"),
-            self._robot_pos_callback,
-            10
+            nav_msgs.Odometry, self.namespace("odom"), self._robot_pos_callback, 10
         )
 
         self.node.create_subscription(
             action_msgs.msg.GoalStatusArray,
-            self.namespace('navigate_to_pose', '_action', 'status'),
+            self.namespace("navigate_to_pose", "_action", "status"),
             self._goal_status_callback,
-            1
+            1,
         )
 
         self._launch_robot()
 
-        self._robot_radius = self.node.rosparam[float].get(
-            'robot_radius',
-            0.25
-        )
+        self._robot_radius = self.node.rosparam[float].get("robot_radius", 0.25)
 
     @property
     def safe_distance(self) -> float:
@@ -160,9 +156,7 @@ class RobotManager(NodeInterface):
     @property
     def namespace(self) -> Namespace:
         if Utils.get_arena_type() == Constants.ArenaType.TRAINING:
-            return Namespace(
-                f"{self._namespace}{self._namespace}_{self.model_name}"
-            )
+            return Namespace(f"{self._namespace}{self._namespace}_{self.model_name}")
 
         return self._namespace(self.name)
 
@@ -178,12 +172,14 @@ class RobotManager(NodeInterface):
         """Clear the costmap around the robot."""
 
         state = self.node.get_lifecycle_state(
-            node_name := self.node.service_namespace(self.name, 'local_costmap/local_costmap'),
+            node_name := self.node.service_namespace(
+                self.name, "local_costmap/local_costmap"
+            ),
         )
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
-        service_name = os.path.abspath(node_name('../clear_around_local_costmap'))
+        service_name = os.path.abspath(node_name("../clear_around_local_costmap"))
 
         self._logger.info(f"Service name: {service_name}")
         self._clear_costmaps_srv = self.node.create_client(
@@ -191,18 +187,15 @@ class RobotManager(NodeInterface):
             service_name,
         )
         while not self._clear_costmaps_srv.wait_for_service(timeout_sec=1.0):
-            self._logger.warn(f'{service_name} service not available, waiting...')
+            self._logger.warn(f"{service_name} service not available, waiting...")
         req = ClearCostmapAroundRobot.Request()
         req.reset_distance = reset_distance
 
         result = self._clear_costmaps_srv.call(req)
         if result is None:
-            self._logger.error(
-                f"service call failed for {service_name}")
+            self._logger.error(f"service call failed for {service_name}")
             return False
-        self._logger.info(
-            f"successfull service call for {service_name}"
-        )
+        self._logger.info(f"successfull service call for {service_name}")
         return True
 
     def reset(
@@ -217,7 +210,7 @@ class RobotManager(NodeInterface):
             if self._robot.record_data_dir:
                 self.node.rosparam[list[float]].set(
                     self.namespace.robot_ns.ParamNamespace()("start"),
-                    [self.start_pos.x, self.start_pos.y, self.start_pos.orientation]
+                    [self.start_pos.x, self.start_pos.y, self.start_pos.orientation],
                 )
         if goal_pos is not None:
             self._goal_pos = self._environment_manager.realize(goal_pos)
@@ -226,13 +219,13 @@ class RobotManager(NodeInterface):
             if self._robot.record_data_dir:
                 self.node.rosparam[list[float]].set(
                     self.namespace.robot_ns.ParamNamespace()("goal"),
-                    [self.goal_pos.x, self.goal_pos.y,
-                        self.goal_pos.orientation]
+                    [self.goal_pos.x, self.goal_pos.y, self.goal_pos.orientation],
                 )
         return self._pose, self._goal_pos
 
     def _publish_goal_callback(self):
         from geometry_msgs.msg import PoseStamped
+
         current_time = self.node.get_clock().now().nanoseconds / 1e9
         if (current_time - self._goal_start_time) >= 60.0:
             self._logger.info("Goal publishing duration reached, stopping")
@@ -259,8 +252,10 @@ class RobotManager(NodeInterface):
     def _publish_goal(self, goal: Pose):
         # only way to circumvent amcl absolutely trolling us is to create this loop
         from geometry_msgs.msg import PoseStamped
+
         self._logger.info(
-            f"Publishing goal: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}")
+            f"Publishing goal: x={goal.position.x}, y={goal.position.y}, orientation={goal.orientation.to_yaw()}"
+        )
 
         self._goal_pos = goal
 
@@ -286,38 +281,54 @@ class RobotManager(NodeInterface):
         if Utils.get_arena_type() != Constants.ArenaType.TRAINING:
 
             launch_description = launch.LaunchDescription()
-            current_log_level = rclpy.logging.get_logger_effective_level(self.node.get_logger().name).name.lower()
-            launch_description.add_action(NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level))
+            current_log_level = rclpy.logging.get_logger_effective_level(
+                self.node.get_logger().name
+            ).name.lower()
+            launch_description.add_action(
+                NodeLogLevelExtension.SetGlobalLogLevelAction(current_log_level)
+            )
 
             launch_arguments = {
-                'robot': self.model_name,
+                "robot": self.model_name,
                 # 'simulator': self.node.conf.Arena.SIMULATOR.value.value,
                 # 'name': self.name,
-                'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
-                'namespace': self.namespace,
+                "task_generator_node": os.path.join(
+                    self.node.get_namespace(), self.node.get_name()
+                ),
+                "task_generator_namespace": self.node.get_namespace().lstrip("/"),
+                "namespace": self.namespace,
                 # 'use_namespace': 'True',
-                'frame': self._robot.frame,
-                'inter_planner': self._robot.inter_planner,
-                'global_planner': self._robot.global_planner,
-                'local_planner': self._robot.local_planner,
+                "frame": self._robot.frame,
+                "inter_planner": self._robot.inter_planner,
+                "global_planner": self._robot.global_planner,
+                "local_planner": self._robot.local_planner,
                 # 'complexity': self.node.declare_parameter('complexity', 1).value,
                 # 'train_mode': self.node.declare_parameter('train_mode', False).value,
-                'agent_name': self._robot.agent,
-                'use_sim_time': 'True',
-                'amcl': 'true' if self.node.conf.Arena.SIMULATOR.value == Constants.Simulator.GAZEBO else 'false',
+                "agent_name": self._robot.agent,
+                "use_sim_time": "True",
+                "amcl": (
+                    "true"
+                    if self.node.conf.Arena.SIMULATOR.value
+                    == Constants.Simulator.GAZEBO
+                    else "false"
+                ),
             }
 
             if self._robot.record_data_dir:
-                launch_arguments.update({
-                    'record_data_dir': self._robot.record_data_dir,
-                })
+                launch_arguments.update(
+                    {
+                        "record_data_dir": self._robot.record_data_dir,
+                    }
+                )
 
             launch_description.add_action(
                 launch.actions.IncludeLaunchDescription(
                     launch.launch_description_sources.PythonLaunchDescriptionSource(
                         os.path.join(
-                            ament_index_python.packages.get_package_share_directory('arena_simulation_setup'),
-                            'launch/robot.launch.py'
+                            ament_index_python.packages.get_package_share_directory(
+                                "arena_simulation_setup"
+                            ),
+                            "launch/robot.launch.py",
                         )
                     ),
                     launch_arguments=launch_arguments.items(),
@@ -325,8 +336,8 @@ class RobotManager(NodeInterface):
             )
             self.node.do_launch(launch_description)
 
-            while 'bt_navigator' not in (node_names := self.node.get_node_names()):
-                self._logger.debug(f'waiting for bt_navigator in {node_names}')
+            while "bt_navigator" not in (node_names := self.node.get_node_names()):
+                self._logger.debug(f"waiting for bt_navigator in {node_names}")
                 # TODO redo this globally in the robots manager, every get_node_names call is expensive
                 self._rate_setup.sleep()  # we love race conditions
 
@@ -339,12 +350,15 @@ class RobotManager(NodeInterface):
                 current_position.position.x,
                 current_position.position.y,
             ),
-            Orientation.from_msg(quat)
+            Orientation.from_msg(quat),
         )
 
     def _goal_status_callback(self, data: action_msgs.msg.GoalStatusArray):
         last_goal = next(reversed(data.status_list), None)
-        self._is_goal_reached = last_goal and last_goal.status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED
+        self._is_goal_reached = (
+            last_goal
+            and last_goal.status == action_msgs.msg.GoalStatus.STATUS_SUCCEEDED
+        )
 
     def update(self):
         """

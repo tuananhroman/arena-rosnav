@@ -146,7 +146,7 @@ arena_cfg:
     debug_mode: true  # Enable debugging features (no saving, no wandb, simplified multiprocessing)
     goal_radius: 0.5  # Radius within which the goal is considered reached
     max_num_moves_per_eps: 200  # Maximum number of steps per episode before termination
-    n_envs: 1  # Number of parallel environments for training
+    n_envs: 2  # Number of parallel environments for training
     n_timesteps: 4000000  # Total number of timesteps to train for
     no_gpu: true  # Set to true to force CPU training even if GPU is available
     safety_distance: 1.0  # Minimum distance to maintain from obstacles for safety
@@ -159,12 +159,12 @@ arena_cfg:
     tm_robots: random  # Robot spawning method (random positions)
 
     staged:
-      starting_stage: 1
+      starting_stage: 3
       threshold_type: succ  # Metric to use: "succ" (success rate) or "rew" (reward)
       upper_threshold: 0.9  # Performance threshold to advance to next stage
       lower_threshold: 0.3  # Performance threshold to stay at current stage
 
-      parameter_node_template: "/task_generator_node"  # Template for task generator node name
+      parameter_node_template: "/task_generator_node_{i}"  # Template for task generator node name
       timeout: 5.0  # Timeout for ROS2 parameter service calls (seconds)
       curriculum_definition:
         # Stage 1: No obstacles (safe start)

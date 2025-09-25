@@ -1,89 +1,83 @@
-
 import os
 import typing
 
 import launch
 import launch_ros.actions
 from ament_index_python.packages import get_package_share_directory
+from launch.substitutions import LaunchConfiguration, TextSubstitution
 
-from arena_bringup.substitutions import (CurrentNamespaceSubstitution,
-                                         LaunchArgument)
+from arena_bringup.substitutions import CurrentNamespaceSubstitution, LaunchArgument
 from arena_bringup.future import PythonExpression
 
 
 def generate_launch_description():
 
-    bringup_dir = get_package_share_directory('arena_bringup')
+    bringup_dir = get_package_share_directory("arena_bringup")
 
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    namespace = LaunchArgument(
-        name='namespace',
-        default_value='task_generator_node'
-    )
+    namespace = LaunchArgument(name="namespace", default_value="task_generator_node")
 
-    simulator = LaunchArgument(
-        name='simulator',
-        description='[dummy, gazebo]'
-    )
-    entity_manager = LaunchArgument(
-        name='entity_manager',
-        description='[dummy]'
-    )
+    simulator = LaunchArgument(name="simulator", description="[dummy, gazebo]")
+    entity_manager = LaunchArgument(name="entity_manager", description="[dummy]")
     robot = LaunchArgument(
-        name='robot',
-        description='robot type [burger, jackal, ridgeback, agvota, rto, ...]'
+        name="robot",
+        description="robot type [burger, jackal, ridgeback, agvota, rto, ...]",
     )
 
     tm_robots = LaunchArgument(
-        name='tm_robots',
+        name="tm_robots",
     )
     tm_obstacles = LaunchArgument(
-        name='tm_obstacles',
+        name="tm_obstacles",
     )
     tm_modules = LaunchArgument(
-        name='tm_modules',
+        name="tm_modules",
+    )
+    task_generator_namespace = LaunchArgument(
+        name="task_generator_namespace",
     )
     world = LaunchArgument(
-        name='world',
+        name="world",
     )
 
     local_planner = LaunchArgument(
-        name='local_planner',
+        name="local_planner",
     )
     inter_planner = LaunchArgument(
-        name='inter_planner',
+        name="inter_planner",
     )
     global_planner = LaunchArgument(
-        name='global_planner',
+        name="global_planner",
     )
     record_data_dir = LaunchArgument(
-        name='record_data_dir',
-        default_value='',
+        name="record_data_dir",
+        default_value="",
     )
 
-    parameter_file = LaunchArgument(
-        name='parameter_file'
-    )
+    parameter_file = LaunchArgument(name="parameter_file")
 
     headless = LaunchArgument(
-        name='headless',
-        default_value='False',
+        name="headless",
+        default_value="False",
     )
     reference = LaunchArgument(
-        name='reference',
-        default_value='[0, 0]',
+        name="reference",
+        default_value="[0, 0]",
     )
     prefix = LaunchArgument(
-        name='prefix',
-        default_value='',
+        name="prefix",
+        default_value="",
     )
 
     map_server_node = launch.actions.IncludeLaunchDescription(
         launch.launch_description_sources.PythonLaunchDescriptionSource(
-            os.path.join(bringup_dir, 'launch/utils/map_server.launch.py')
-        )
+            os.path.join(bringup_dir, "launch/utils/map_server.launch.py")
+        ),
+        launch_arguments={
+            "map_frame": [LaunchConfiguration("task_generator_namespace"), "/map"],
+        }.items(),
     )
 
     # Hunavsim Pedestrians in rviz
@@ -103,7 +97,9 @@ def generate_launch_description():
             {"namespace": namespace.substitution},
         ],
         output="screen",
-        condition=launch.conditions.IfCondition(PythonExpression(['"', entity_manager.substitution, '" == "hunav"'])),
+        condition=launch.conditions.IfCondition(
+            PythonExpression(['"', entity_manager.substitution, '" == "hunav"'])
+        ),
     )
     # Start the rviz config generator which launches also rviz2 with desired config file
     rviz_node = launch_ros.actions.Node(
@@ -124,10 +120,10 @@ def generate_launch_description():
     )
 
     task_generator_node = launch_ros.actions.Node(
-        package='task_generator',
-        executable='task_generator_node',
+        package="task_generator",
+        executable="task_generator_node",
         name=namespace.substitution,
-        output='screen',
+        output="screen",
         parameters=[
             {
                 **simulator.str_param,
@@ -148,30 +144,55 @@ def generate_launch_description():
         ],
     )
 
-    ld = launch.LaunchDescription([
-        *ld_items,
-        launch.actions.GroupAction([
-            launch_ros.actions.PushRosNamespace(namespace=namespace.substitution),
-            map_server_node,
-            pedestrian_marker_node,
-            rviz_node
-        ]),
-        task_generator_node,
-        # launch_ros.actions.Node(
-        #     package='task_generator',
-        #     executable='server',
-        #     name='task_generator_server',
-        #     output='screen'
-        # ),
-        # launch_ros.actions.Node(
-        #     package='task_generator',
-        #     executable='filewatcher',
-        #     name='task_generator_filewatcher',
-        #     output='screen'
-        # )
-    ])
+    # Static transform publisher to connect world map to namespaced map frame
+    # static_transform_node = launch_ros.actions.Node(
+    #     package="tf2_ros",
+    #     executable="static_transform_publisher",
+    #     name="world_to_namespaced_map_transform",
+    #     arguments=[
+    #         "0",
+    #         "0",
+    #         "0",
+    #         "0",
+    #         "0",
+    #         "0",
+    #         "map",
+    #         [LaunchConfiguration("task_generator_namespace"), "/map"],
+    #     ],
+    #     parameters=[{"use_sim_time": True}],
+    # )
+
+    ld = launch.LaunchDescription(
+        [
+            *ld_items,
+            launch.actions.GroupAction(
+                [
+                    launch_ros.actions.PushRosNamespace(
+                        namespace=namespace.substitution
+                    ),
+                    map_server_node,
+                    pedestrian_marker_node,
+                    rviz_node,
+                ]
+            ),
+            # static_transform_node,
+            task_generator_node,
+            # launch_ros.actions.Node(
+            #     package='task_generator',
+            #     executable='server',
+            #     name='task_generator_server',
+            #     output='screen'
+            # ),
+            # launch_ros.actions.Node(
+            #     package='task_generator',
+            #     executable='filewatcher',
+            #     name='task_generator_filewatcher',
+            #     output='screen'
+            # )
+        ]
+    )
     return ld
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     generate_launch_description()
