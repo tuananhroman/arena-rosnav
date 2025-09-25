@@ -4,7 +4,9 @@ import tempfile
 import time
 import typing
 
-import arena_simulation_setup.world
+import arena_simulation_setup.worlds
+import launch
+import launch.actions
 import lifecycle_msgs.msg
 import nav2_msgs.srv
 import nav_msgs.msg
@@ -13,13 +15,14 @@ import rclpy
 import rclpy.callback_groups
 import rclpy.client
 import yaml
+from ament_index_python.packages import get_package_share_directory
+from arena_simulation_setup.shared import Position
 
+from task_generator import NodeInterface
 from task_generator.manager.environment_manager import EnvironmentManager
-from task_generator.shared import Position, Wall
 from task_generator.utils.time import Time
 
-from .utils import (WorldMap, WorldObstacleConfiguration,
-                    WorldObstacleConfigurations, WorldWalls, WorldZones, Zone)
+from .utils import WorldMap
 from .world_manager import WorldManager
 
 _DUMMY_MAP_SHAPE = (1, 1)
@@ -45,7 +48,59 @@ _DUMMY_MAP = nav_msgs.msg.OccupancyGrid(
 )
 
 
-class WorldManagerROS(WorldManager):
+class MapServerHandler(NodeInterface):
+    def restart_map_server(self):
+        """
+        Relaunch the map server if it is not active.
+        """
+        self._logger.warn('shutting down map server...')
+
+        change_state_client = self.node.create_client(
+            lifecycle_msgs.srv.ChangeState,
+            self.node.service_namespace('map_server', 'change_state')
+        )
+        while not change_state_client.wait_for_service(timeout_sec=1.0):
+            self.node.get_logger().warn('ChangeState service not available, waiting again...')
+
+        request = lifecycle_msgs.srv.ChangeState.Request()
+        request.transition.id = lifecycle_msgs.msg.Transition.TRANSITION_DESTROY
+        change_state_client.call(request)
+
+        self._logger.warn('map server shut down.')
+        self._logger.warn('relaunching map server...')
+
+        self.node.do_launch(
+            launch.LaunchDescription([
+                launch.actions.IncludeLaunchDescription(
+                    launch.launch_description_sources.PythonLaunchDescriptionSource(
+                        os.path.join(
+                            get_package_share_directory('arena_bringup'),
+                            'launch/utils/map_server.launch.py'
+                        )
+                    )
+                )
+            ])
+        )
+
+        self._logger.warn('map server relaunched.')
+
+    def check_map_server(self, timeout: float = 10.0, period: float = 1.0) -> bool:
+        """
+        Wait for the the map server to be active.
+        """
+        while self.node.get_lifecycle_state(
+            self.node.service_namespace('map_server'),
+            callback_group=rclpy.callback_groups.ReentrantCallbackGroup(),
+        ).id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
+            self.node.get_logger().warn('map_server is not active, waiting again...')
+            time.sleep(period if timeout > period else timeout)
+            timeout -= period
+            if timeout <= 0:
+                return False
+        return True
+
+
+class WorldManagerROS(MapServerHandler, WorldManager):
 
     _environment_manager: EnvironmentManager
 
@@ -53,50 +108,6 @@ class WorldManagerROS(WorldManager):
     _world_name: str
     _map_name: str | None
     _callbacks: list[typing.Callable[[], None]]
-
-    @classmethod
-    def _load_walls(cls, yaml_path: str) -> WorldWalls | None:
-        try:
-            with open(yaml_path) as f:
-                walls_yaml = yaml.safe_load(f)
-            walls: WorldWalls = [
-                Wall.parse(wall)
-                for wall
-                in walls_yaml['walls']
-            ]
-            return walls
-        except Exception:
-            return None
-
-    @classmethod
-    def _load_obstacles(cls, yaml_path: str) -> WorldObstacleConfigurations | None:
-        try:
-            with open(yaml_path) as f:
-                obstacles_yaml = yaml.safe_load(f)
-
-            obstacles: WorldObstacleConfigurations = [
-                WorldObstacleConfiguration.parse(obstacle)
-                for obstacle
-                in obstacles_yaml['static']
-            ]
-            return obstacles
-        except Exception:
-            return None
-
-    @classmethod
-    def _load_zones(cls, yaml_path: str) -> WorldZones | None:
-        try:
-            with open(yaml_path) as f:
-                zones_yaml = yaml.safe_load(f)
-
-            zones: WorldZones = [
-                Zone.parse(zone)
-                for zone
-                in zones_yaml
-            ]
-            return zones
-        except Exception:
-            return None
 
     def _shift_map(self, map_dir: str) -> tempfile.TemporaryDirectory:
         """
@@ -108,7 +119,8 @@ class WorldManagerROS(WorldManager):
         # create shifted yaml
         target = os.path.join(map_dir, 'map.yaml')
         with open(target, 'r') as f:
-            map_yaml = dict(yaml.safe_load(f))
+            map_yaml = yaml.safe_load(f)
+            assert isinstance(map_yaml, dict), "map.yaml must be a dictionary"
         origin = list(map_yaml.get('origin', [0, 0, 0]))
         shifted_origin = self._environment_manager.realize(
             Position(
@@ -135,7 +147,7 @@ class WorldManagerROS(WorldManager):
         world_name = str(value)
 
         # if world_name != self._world_name and \
-        #         (simulator := self.node.conf.Arena.SIMULATOR.value) in (Constants.Simulator.GAZEBO,):
+        #         (simulator := self.node.conf.Arena.SIM.value) in (Constants.Simulator.GAZEBO,):
         #     raise RuntimeError(
         #         f'Simulator {simulator.value} does not support world reloading.')
 
@@ -143,7 +155,7 @@ class WorldManagerROS(WorldManager):
         self._world_name = world_name
 
         tmp_map = self._shift_map(
-            arena_simulation_setup.world.World(world_name).map.path
+            arena_simulation_setup.worlds.World(world_name).map.path
         )
         map_yaml = os.path.join(
             tmp_map.name,
@@ -168,18 +180,11 @@ class WorldManagerROS(WorldManager):
         return True
 
     def _map_callback(self, costmap: nav_msgs.msg.OccupancyGrid):
-        if self._world.map.time <= costmap.info.map_load_time:
+        if self._map.time <= costmap.info.map_load_time:
 
-            world_config = arena_simulation_setup.world.World(self.world_name)
-
-            obstacles = self._load_obstacles(world_config.map.obstacles)
-            walls = self._load_walls(world_config.map.walls)
-            zones = self._load_zones(world_config.map.zones)
             self.update_world(
-                WorldMap.from_costmap(costmap),
-                obstacles=obstacles,
-                walls=walls,
-                zones=zones,
+                world_map=WorldMap.from_costmap(costmap),
+                world_description=arena_simulation_setup.worlds.World(self.world_name).load()
             )
 
             self._map_name = self.world_name
@@ -189,6 +194,9 @@ class WorldManagerROS(WorldManager):
                     callback()
                 except Exception as e:
                     self._logger.warning(f'encountered exception in world callback: {repr(e)}')
+                    import traceback
+                    import sys
+                    traceback.print_exc(file=sys.stderr)
 
     def _setup_world_callbacks(self):
 
@@ -200,12 +208,8 @@ class WorldManagerROS(WorldManager):
             1,
         )
 
-        while self.node.get_lifecycle_state(
-            self.node.service_namespace('map_server'),
-            callback_group=rclpy.callback_groups.ReentrantCallbackGroup(),
-        ).id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
-            self._logger.warn('map_server is not active, waiting again...')
-            time.sleep(1.0)
+        while not self.check_map_server():
+            self.restart_map_server()
 
         # publishing map to map_server
         self._cli = self.node.create_client(
@@ -228,7 +232,7 @@ class WorldManagerROS(WorldManager):
         self._environment_manager = environment_manager
 
         self._callbacks = []
-        self.update_world(world_map=WorldMap.from_costmap(_DUMMY_MAP), obstacles=None, walls=[])
+        self.update_world(world_map=WorldMap.from_costmap(_DUMMY_MAP), world_description=arena_simulation_setup.worlds.world.WorldDescription())
         self._world_name = ''
         self._map_name = None
 
@@ -248,3 +252,7 @@ class WorldManagerROS(WorldManager):
     @property
     def world_name(self) -> str:
         return self._world_name
+
+    @property
+    def world(self) -> arena_simulation_setup.worlds.world.WorldDescription:
+        return self._world

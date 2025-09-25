@@ -1,21 +1,18 @@
 from __future__ import annotations
+from arena_rclpy_mixins.shared import Namespace
 
-import enum
 import typing
-from typing import Callable, Collection, Optional, Type, TypeVar, overload
+from typing import Optional, Type, TypeVar
 
 import attrs
 import rclpy
 import rclpy.node
-from arena_simulation_setup.shared import DynamicObstacle, Entity, Obstacle
-from arena_simulation_setup.shared import Robot as Robot_  # noqa
-from arena_simulation_setup.shared import Wall
-from arena_simulation_setup.utils.geometry import (Orientation, Pose,  # noqa
-                                                   Position, PositionRadius)
-from arena_simulation_setup.utils.models import (Model, ModelType,  # noqa
-                                                 ModelWrapper)
+from arena_simulation_setup.shared import Robot as Robot_
+from arena_simulation_setup.utils.cattrs import register_parse
 
-_node: rclpy.node.Node
+from arena_simulation_setup.shared import DynamicObstacle, CustomDynamicObstacle, Entity, Obstacle, Wall, Floor, Door  # noqa
+from arena_simulation_setup.utils.geometry import (Orientation, Pose, Position, PositionRadius)  # noqa
+from arena_simulation_setup.utils.models import (Model, ModelType, ModelWrapper)  # noqa
 
 
 def configure_node(node: rclpy.node.Node):
@@ -48,6 +45,7 @@ def rosparam_set(
     return _node.rosparam.set(param_name, value)
 
 
+@register_parse
 @attrs.define
 class Robot(Robot_):
     inter_planner: str
@@ -57,41 +55,36 @@ class Robot(Robot_):
     record_data_dir: Optional[str] = None
 
     def compatible(self, value: Robot) -> bool:
-        return self.model.name == value.model.name \
-            and self.local_planner == value.local_planner \
-            and self.global_planner == value.global_planner \
-            and self.agent == value.agent
+        return self.model.name == value.model.name and self.local_planner == value.local_planner and self.global_planner == value.global_planner and self.agent == value.agent
 
     def __eq__(self, value: object) -> bool:
         if not isinstance(value, Robot):
             return False
 
-        return self.compatible(value) \
-            and self.name == value.name \
-            and self.record_data_dir == value.record_data_dir
+        return self.compatible(value) and self.name == value.name and self.record_data_dir == value.record_data_dir
 
     @property
-    def frame(self) -> str:
+    def frame(self) -> Namespace:
         if not self.name:
-            return ''
-        return self.name + '/'
+            return Namespace('')
+        return Namespace(self.name)
 
     @classmethod
-    def parse(cls, obj: dict) -> "Robot":
-        name = str(obj.get("name", ""))
-        pose = Pose.parse(obj.get("pos", (0, 0, 0)))
+    def parse(cls, value: dict) -> "Robot":
+        name = str(value.get("name", ""))
+        pose = Pose(value.get("pos", (0, 0, 0)))
         inter_planner = str(
-            obj.get("inter_planner", rosparam_get(str, "inter_planner", ""))
+            value.get("inter_planner", rosparam_get(str, "inter_planner", ""))
         )
         local_planner = str(
-            obj.get("local_planner", rosparam_get(str, "local_planner", ""))
+            value.get("local_planner", rosparam_get(str, "local_planner", ""))
         )
         global_planner = str(
-            obj.get("global_planner", rosparam_get(str, "global_planner", ""))
+            value.get("global_planner", rosparam_get(str, "global_planner", ""))
         )
-        model = str(obj.get("model", rosparam_get(str, "model", "")))
-        agent = str(obj.get("agent", rosparam_get(str, "agent_name", "")))
-        record_data = obj.get(
+        model = str(value.get("model", rosparam_get(str, "model", "")))
+        agent = str(value.get("agent", rosparam_get(str, "agent_name", "")))
+        record_data = value.get(
             "record_data_dir", rosparam_get(str, "record_data_dir", None)
         )
 
@@ -104,5 +97,5 @@ class Robot(Robot_):
             model=model,
             agent=agent,
             record_data_dir=record_data,
-            extra=obj,
+            extra=value,
         )

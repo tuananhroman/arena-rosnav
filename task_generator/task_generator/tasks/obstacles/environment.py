@@ -1,4 +1,3 @@
-import itertools
 import math
 import random
 from collections import defaultdict
@@ -26,13 +25,13 @@ class TM_Environment(TM_Obstacles):
     _config: ROSParamT[_ParsedConfig]
 
     def calculate_world_bounds(self):
-        all_walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
+        all_walls = list(self._PROPS.world_manager.world.all_walls)
         x_min = y_min = np.inf
         x_max = y_max = -np.inf
 
         for wall in all_walls:
-            x1, y1 = wall.Start.x, wall.Start.y
-            x2, y2 = wall.End.x, wall.End.y
+            x1, y1 = wall.start.x, wall.start.y
+            x2, y2 = wall.end.x, wall.end.y
             x_min = min(x_min, x1, x2)
             x_max = max(x_max, x1, x2)
             y_min = min(y_min, y1, y2)
@@ -47,13 +46,13 @@ class TM_Environment(TM_Obstacles):
         else:
             door_threshold = float(door_threshold)
 
-        all_walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
+        all_walls = list(self._PROPS.world_manager.world.all_walls)
         horizontal, vertical = [], []
 
         # Classify walls
         for wall in all_walls:
-            start = (wall.Start.x, wall.Start.y)
-            end = (wall.End.x, wall.End.y)
+            start = (wall.start.x, wall.start.y)
+            end = (wall.end.x, wall.end.y)
             if start[1] == end[1]:  # Horizontal
                 y = start[1]
                 x1, x2 = sorted([start[0], end[0]])
@@ -243,8 +242,8 @@ class TM_Environment(TM_Obstacles):
 
         # Draw walls
         for wall in walls:
-            start = (wall.Start.x, wall.Start.y)
-            end = (wall.End.x, wall.End.y)
+            start = (wall.start.x, wall.start.y)
+            end = (wall.end.x, wall.end.y)
             ax.plot([start[0], end[0]], [start[1], end[1]], 'k-', linewidth=2)
 
         # Draw rooms with transparency
@@ -370,11 +369,9 @@ class TM_Environment(TM_Obstacles):
         static_obstacles: list[Obstacle] = []
         dynamic_obstacles: list[DynamicObstacle] = []
 
-        if (zones := self.node._world_manager.zones):
-            rooms = [zone.polygon for zone in zones]
+        if (zones := self._PROPS.world_manager.world.zones):
+            rooms = [shapely.Polygon(zone.corners) for zone in zones]
         else:
-            walls = list(self._PROPS.world_manager.walls) + list(self._PROPS.world_manager.detected_walls)
-            # print(walls)
             rooms = [shapely.Polygon(room) for room in self._create_rooms_from_walls()]
             # if not rooms:
             # print("[WARNING] No rooms found! (check your walls data)")
@@ -398,7 +395,7 @@ class TM_Environment(TM_Obstacles):
             margin = group.get("margin", 0.5)  # Extra margin
 
             # Occupancy grid
-            occupancy_grid = self._PROPS.world_manager.world.map.occupancy.grid
+            occupancy_grid = self._PROPS.world_manager.map.occupancy.grid
 
             # We do a naive tile-based approach: scan each room from bottom-left
             # to top-right in some stride to see if we can place the group.
@@ -456,7 +453,7 @@ class TM_Environment(TM_Obstacles):
                                 static_obstacles.append(new_obstacle)
                             for g, entity in enumerate(group_dynamic_entites):
                                 ex_off, ey_off, e_theta = entity["position"]
-
+                                print(entity['model'])
                                 radians = math.radians(rotation_deg)
                                 rot_x = ex_off * math.cos(radians) - ey_off * math.sin(radians)
                                 rot_y = ex_off * math.sin(radians) + ey_off * math.cos(radians)

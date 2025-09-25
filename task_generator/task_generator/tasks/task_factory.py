@@ -1,6 +1,5 @@
 import typing
 
-import arena_simulation_setup
 import rclpy
 import rosgraph_msgs.msg as rosgraph_msgs
 import std_msgs.msg as std_msgs
@@ -228,8 +227,8 @@ class TaskFactory(Namespaced):
                     obstacles, dynamic_obstacles = self.__tm_obstacles.reset(**kwargs)
 
                     def respawn():
-                        self.environment_manager.spawn_obstacles(obstacles)
                         self.environment_manager.spawn_dynamic_obstacles(dynamic_obstacles)
+                        self.environment_manager.spawn_obstacles(obstacles)
 
                     self.environment_manager.respawn(respawn)
 

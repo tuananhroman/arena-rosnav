@@ -7,7 +7,7 @@ import rclpy
 from arena_rclpy_mixins.ROSParamServer import ROSParamT
 from arena_rclpy_mixins.shared import Namespace
 from task_generator import NodeInterface
-from task_generator.manager.entity_manager import EntityManager
+from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.manager.environment_manager import EnvironmentManager
 from task_generator.shared import Pose, Position, Robot
 import arena_simulation_setup.configs.robot_setup
@@ -38,8 +38,8 @@ class RobotsManager(abc.ABC):
     def set_up(self):
         ...
 
-    def __init__(self, entity_manager: EntityManager, environment_manager: EnvironmentManager) -> None:
-        self._entity_manager: EntityManager = entity_manager
+    def __init__(self, entity_manager: BaseHumanSimulator, environment_manager: EnvironmentManager) -> None:
+        self._entity_manager: BaseHumanSimulator = entity_manager
         self._environment_manager: EnvironmentManager = environment_manager
         self._robot_managers: dict[str, RobotManager] = {}
 
@@ -58,7 +58,7 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
         v: typing.Any
     ) -> _RobotDiff:
 
-        robot_arg: list[str] = str(v).split(',')
+        robot_arg: list[str] = list(filter(len, str(v).split(',')))
 
         parsed_explicit: dict[str, Robot] = {}
         parsed_anonymous: dict[str, list[Robot]] = {}
@@ -174,9 +174,8 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
             config.name = robot_name
             config.pose = next(self._initialpose)
             manager = RobotManager(
-                namespace=Namespace(
-                    self.node.get_namespace())(
-                        self.node.get_name(),
+                namespace=Namespace(self.node.get_namespace())(
+                    self.node.get_name(),
                 ),
                 entity_manager=self._entity_manager,
                 environment_manager=self._environment_manager,
@@ -188,7 +187,7 @@ class RobotsManagerROS(NodeInterface, RobotsManager):
 
         self.node.rosparam[list[str]].set('robot_names', [robot.name for robot in self._robot_managers.values()])
 
-    def __init__(self, entity_manager: EntityManager, environment_manager: EnvironmentManager) -> None:
+    def __init__(self, entity_manager: BaseHumanSimulator, environment_manager: EnvironmentManager) -> None:
         NodeInterface.__init__(self)
         RobotsManager.__init__(self, entity_manager=entity_manager, environment_manager=environment_manager)
         self._initialpose = _initialpose_generator(-10, -10, -5)

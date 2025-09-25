@@ -3,9 +3,10 @@ import typing
 
 import action_msgs.msg
 import ament_index_python
-import attrs
+import arena_simulation_setup.entities.robot
 import geometry_msgs.msg as geometry_msgs
 import launch
+import launch_ros
 import lifecycle_msgs.msg
 import nav_msgs.msg as nav_msgs
 import rclpy
@@ -13,16 +14,16 @@ import rclpy.client
 import rclpy.publisher
 import rclpy.timer
 from arena_rclpy_mixins.shared import Namespace
-from nav2_msgs.srv import ClearCostmapAroundRobot
+from nav2_msgs.srv import ClearCostmapAroundRobot, ClearEntireCostmap
 
 import arena_bringup.extensions.NodeLogLevelExtension as NodeLogLevelExtension
 import task_generator.utils.arena as Utils
 from task_generator import NodeInterface
 from task_generator.constants import Constants
-from task_generator.manager.entity_manager import EntityManager
-from task_generator.manager.entity_manager.utils import YAMLUtil
+from task_generator.simulators.human import BaseHumanSimulator
+from task_generator.simulators.human.utils import YAMLUtil
 from task_generator.manager.environment_manager import EnvironmentManager
-from task_generator.shared import ModelType, Pose, Position, Orientation, Robot
+from task_generator.shared import ModelType, Orientation, Pose, Position, Robot
 
 
 class RobotManager(NodeInterface):
@@ -32,7 +33,7 @@ class RobotManager(NodeInterface):
     """
 
     _namespace: Namespace
-    _entity_manager: EntityManager
+    _entity_manager: BaseHumanSimulator
     _environment_manager: EnvironmentManager
     _start_pos: Pose
     _goal_pos: Pose
@@ -44,9 +45,10 @@ class RobotManager(NodeInterface):
     _move_base_pub: rclpy.publisher.Publisher
     _goal_pub: rclpy.publisher.Publisher
     _pub_goal_timer: rclpy.timer.Timer
-    _clear_costmaps_srv: rclpy.client.Client
+    _clear_costmap_around_robot_srv: rclpy.client.Client
     _is_goal_reached: bool
     _rate_setup: rclpy.timer.Rate
+    _config: arena_simulation_setup.entities.robot.Robot
 
     @property
     def robot(self) -> Robot:
@@ -63,12 +65,14 @@ class RobotManager(NodeInterface):
     def __init__(
         self,
         namespace: Namespace,
-        entity_manager: EntityManager,
+        entity_manager: BaseHumanSimulator,
         environment_manager: EnvironmentManager,
         robot: Robot,
     ):
         NodeInterface.__init__(self)
         self._rate_setup = self.node.create_rate(.1)
+
+        self._config = arena_simulation_setup.entities.robot.Robot(robot.model.name)
 
         self._namespace = namespace
         self._entity_manager = entity_manager
@@ -88,30 +92,43 @@ class RobotManager(NodeInterface):
             self._goal_tolerance_distance = 1.0
             self._goal_tolerance_angle = 0.523599
             self._safety_distance = 0.25
-            print(f"Warning: Using default values for robot parameters: {e}")
+            self._logger.warn(f"Using default values for robot parameters: {e}")
 
         self._robot = robot
         self._robot.extra.setdefault('namespace', self.namespace)
         self._pose = self._start_pos
         self._goal_timer = None
 
-    def set_up_robot(self):
-        self._robot = self._environment_manager.spawn_robot(
-            attrs.evolve(
-                self._robot,
-                model=self._robot.model.override(
-                    model_type=ModelType.YAML,
-                    override=lambda model: model.replace(
-                        description=YAMLUtil.serialize(
-                            YAMLUtil.update_plugins(
-                                namespace=self.namespace,
-                                description=YAMLUtil.parse_yaml(model.description),
-                            )
-                        )
-                    ),
-                )
+    def _odom_base_transform(self):
+        self.node.do_launch(
+            launch_ros.actions.Node(
+                package="tf2_ros",
+                executable="static_transform_publisher",
+                name="odom_to_baseframe_publisher",
+                arguments=[
+                    "0", "0", "0",
+                    "0", "0", "0", "1",
+                    self.frame(self._config.model_params.odom_frame),
+                    self.frame(self._config.model_params.base_frame),
+                ],
+                parameters=[{'use_sim_time': True}],
             )
         )
+
+    def set_up_robot(self):
+        self._robot.model = self._robot.model.override(
+            model_type=ModelType.YAML,
+            override=lambda model: model.replace(
+                description=YAMLUtil.serialize(
+                    YAMLUtil.update_plugins(
+                        namespace=self.namespace,
+                        description=YAMLUtil.parse_yaml(model.description),
+                    )
+                )
+            ),
+        )
+        self._robot.pose.position.z += self._config.model_params.z_offset
+        self._robot = self._environment_manager.spawn_robot((self._robot,))[0]
 
         _gen_goal_topic = self.namespace("goal_pose")
 
@@ -136,6 +153,7 @@ class RobotManager(NodeInterface):
         )
 
         self._launch_robot()
+        self._odom_base_transform()
 
         self._robot_radius = self.node.rosparam[float].get(
             'robot_radius',
@@ -154,7 +172,8 @@ class RobotManager(NodeInterface):
     def name(self) -> str:
         return self._robot.name
 
-    def frame(self) -> str:
+    @property
+    def frame(self) -> Namespace:
         return self._robot.frame
 
     @property
@@ -171,37 +190,50 @@ class RobotManager(NodeInterface):
         return self._is_goal_reached
 
     def move_robot_to_pos(self, pose: Pose):
-        self._entity_manager.move_robot(name=self.name, pose=pose)
-        self.clearCostmapAroundRobot(5.0)
+        pose.position.z += self._config.model_params.z_offset
+        self.robot.pose = pose
+        self._entity_manager.move_robot((self.robot,))
+        import time
+        time.sleep(0.001)  # wait for the robot to move
+        self._clear_local_costmap(-1)
 
-    def clearCostmapAroundRobot(self, reset_distance: float) -> bool:
-        """Clear the costmap around the robot."""
+    def _clear_local_costmap(self, reset_distance: float = -1) -> bool:
+        """
+        Clear the local costmap around the robot.
+        If reset_distance is -1, the entire costmap will be cleared.
+        If reset_distance is >= 0, only the costmap around the robot will be cleared.
+        """
+        node_name = self.node.service_namespace(self.name, 'local_costmap/local_costmap')
 
-        state = self.node.get_lifecycle_state(
-            node_name := self.node.service_namespace(self.name, 'local_costmap/local_costmap'),
-        )
+        if reset_distance < 0:
+            srv_name = os.path.abspath(node_name('../clear_entirely_local_costmap'))
+            srv_type = ClearEntireCostmap
+            req = ClearEntireCostmap.Request()
+        else:
+            srv_name = os.path.abspath(node_name('../clear_around_local_costmap'))
+            srv_type = ClearCostmapAroundRobot
+            req = ClearCostmapAroundRobot.Request()
+            req.reset_distance = reset_distance
+
+        state = self.node.get_lifecycle_state(node_name)
         if state.id != lifecycle_msgs.msg.State.PRIMARY_STATE_ACTIVE:
             return False
 
-        service_name = os.path.abspath(node_name('../clear_around_local_costmap'))
-
-        self._logger.info(f"Service name: {service_name}")
-        self._clear_costmaps_srv = self.node.create_client(
-            ClearCostmapAroundRobot,
-            service_name,
+        self._logger.info(f"Service name: {srv_name}")
+        srv = self.node.create_client(
+            srv_type,
+            srv_name,
         )
-        while not self._clear_costmaps_srv.wait_for_service(timeout_sec=1.0):
-            self._logger.warn(f'{service_name} service not available, waiting...')
-        req = ClearCostmapAroundRobot.Request()
-        req.reset_distance = reset_distance
+        while not srv.wait_for_service(timeout_sec=1.0):
+            self._logger.warn(f'{srv_name} service not available, waiting...')
 
-        result = self._clear_costmaps_srv.call(req)
+        result = srv.call(req)
         if result is None:
             self._logger.error(
-                f"service call failed for {service_name}")
+                f"service call failed for {srv_name}")
             return False
         self._logger.info(
-            f"successfull service call for {service_name}"
+            f"successfull service call for {srv_name}"
         )
         return True
 
@@ -291,12 +323,12 @@ class RobotManager(NodeInterface):
 
             launch_arguments = {
                 'robot': self.model_name,
-                # 'simulator': self.node.conf.Arena.SIMULATOR.value.value,
+                # 'simulator': self.node.conf.Arena.SIM.value.value,
                 # 'name': self.name,
                 'task_generator_node': os.path.join(self.node.get_namespace(), self.node.get_name()),
                 'namespace': self.namespace,
                 # 'use_namespace': 'True',
-                'frame': self._robot.frame,
+                'frame': self._robot.frame(''),  # trailing slash
                 'inter_planner': self._robot.inter_planner,
                 'global_planner': self._robot.global_planner,
                 'local_planner': self._robot.local_planner,
@@ -304,7 +336,7 @@ class RobotManager(NodeInterface):
                 # 'train_mode': self.node.declare_parameter('train_mode', False).value,
                 'agent_name': self._robot.agent,
                 'use_sim_time': 'True',
-                'amcl': 'true' if self.node.conf.Arena.SIMULATOR.value == Constants.Simulator.GAZEBO else 'false',
+                'amcl': 'true' if self.node.conf.Arena.SIM.value in (Constants.SimSimulator.GAZEBO,) else 'false',
             }
 
             if self._robot.record_data_dir:

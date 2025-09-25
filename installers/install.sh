@@ -95,8 +95,8 @@ sudo dpkg-reconfigure --frontend noninteractive tzdata
 # ROS
 echo "Setting up ROS2 ${ARENA_ROS_DISTRO}..."
 
-sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
+# sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg
+# echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(. /etc/os-release && echo "$UBUNTU_CODENAME") main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null
 
 
 # for building python
@@ -166,7 +166,7 @@ if [ ! -d src/deps ] ; then
     git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/pcl_msgs.git -b ros2
     git clone --filter=tree:0 --depth 1 https://github.com/rudislabs/actuator_msgs.git
     git clone --filter=tree:0 --depth 1 https://github.com/swri-robotics/gps_umd.git -b ros2-devel
-    git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_msgs.git -b ros2
+    git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_msgs.git -b humble
     git clone --filter=tree:0 --depth 1 https://github.com/ros-perception/vision_opencv.git -b humble
   popd
 fi
@@ -191,7 +191,7 @@ if [ ! -f src/ros2/compiled ] ; then
     git -c user.name='Arena' -c user.email='anonymous@arena-rosnav.org' cherry-pick 654d6f5658b59009147b9fad9b724919633f38fe || echo 'already cherry picked'
   popd
 
-  . src/arena/arena-rosnav/tools/colcon_build --paths src/ros2/*
+  PATHS=src/ros2 . src/arena/arena-rosnav/tools/colcon_build
   touch src/ros2/compiled
   
   # don't even ask
@@ -211,13 +211,15 @@ if [ ! -f "$INSTALLED" ] ; then
 
 
   ln -fs src/arena/arena-rosnav/tools/source.bash ./arena.bash
+  ln -fs src/arena/arena-rosnav/tools/source.zsh ./arena.zsh
   ln -fs src/arena/arena-rosnav/tools/poetry_install .
   ln -fs src/arena/arena-rosnav/tools/colcon_build .
+  ln -fs src/arena/arena-rosnav/tools/colcon_build.zsh .
 
   . poetry_install
 fi
 
-vcs import src < src/arena/arena-rosnav/arena.repos
+vcs import src < src/arena/arena-rosnav/.repos/arena.repos
 rosdep install -y \
   --from-paths src \
   --ignore-src \
@@ -235,11 +237,12 @@ fi
 # run installers
 # sudo apt upgrade
 
+BUILD_ALL=1 . colcon_build
+
 compile(){
   cd "${ARENA_WS_DIR}"
-  . colcon_build #TODO get rid of this
   ARENA_ROS_DISTRO=${ARENA_ROS_DISTRO} ros2 run arena_bringup pull
-  . colcon_build
+  BUILD_ALL=1 . colcon_build
 }
 
 compile
@@ -260,8 +263,9 @@ do
     choice="${choice:-N}"
     if [[ "$choice" =~ ^[Yy]$ ]]; then
         . "src/arena/arena-rosnav/installers/$installer"
-        compile
         echo "$name" >> "$INSTALLED"
+        ros2 run arena_bringup pull
+        . colcon_build
     else
         echo "Skipping ${name} installation."
     fi
@@ -272,5 +276,10 @@ done
 
 # final pass
 compile
+
+if [ ! -f "${ARENA_WS_DIR}/ws-arena.code-workspace" ]; then
+  ln -rs "${ARENA_WS_DIR}/src/arena/arena-rosnav/tools/arena.code-workspace" "${ARENA_WS_DIR}/ws-arena.code-workspace"
+  echo "Created symlink for ws-arena.code-workspace in ${ARENA_WS_DIR}"
+fi
 
 echo 'installation finished'

@@ -1,25 +1,21 @@
-import datetime
 import hashlib
 import json
-import pathlib
-import yaml
+import logging
 import os
+import pathlib
 import time
 import typing
+from logging import FileHandler, Formatter, StreamHandler
+
 import rclpy
-from rclpy.node import Node
-from rclpy.parameter import Parameter
-from rcl_interfaces.srv import SetParameters, DescribeParameters
+import yaml
 from ament_index_python.packages import get_package_share_directory
-from std_srvs.srv import Empty as EmptySrv
+from rcl_interfaces.srv import DescribeParameters, SetParameters
+from rclpy.parameter import Parameter
+
 from task_generator.constants import Constants
-from task_generator.constants.runtime import Configuration
 from task_generator.tasks.modules import TM_Module
-from task_generator.tasks.task_factory import TaskFactory
-from arena_rclpy_mixins.ROSParamServer import ROSParamServer
-import logging
-from logging import FileHandler, StreamHandler, Formatter
-from rclpy.validate_full_topic_name import validate_full_topic_name
+
 
 class _Config(typing.NamedTuple):
     @classmethod
@@ -44,6 +40,7 @@ class _Config(typing.NamedTuple):
     contest: Contest
     general: General
 
+
 class Suite(typing.NamedTuple):
     @classmethod
     def parse(cls, name: str, obj: typing.Dict, config_class=None):
@@ -52,7 +49,8 @@ class Suite(typing.NamedTuple):
             stages=[cls.Stage.parse(stage, config_class) for stage in obj["stages"]]
         )
 
-    class Index(int): pass
+    class Index(int):
+        pass
 
     class Stage(typing.NamedTuple):
         name: str
@@ -146,6 +144,7 @@ class Suite(typing.NamedTuple):
     def config(self, index: Index) -> Stage:
         return self.stages[index]
 
+
 class Contest(typing.NamedTuple):
     @classmethod
     def parse(cls, name: str, obj: dict):
@@ -154,7 +153,8 @@ class Contest(typing.NamedTuple):
             contestants=[cls.Contestant.parse(contestant) for contestant in obj["contestants"]]
         )
 
-    class Index(int): pass
+    class Index(int):
+        pass
 
     class Contestant(typing.NamedTuple):
         name: str
@@ -163,7 +163,7 @@ class Contest(typing.NamedTuple):
         agent_name: str = ""
 
         @classmethod
-        def parse(cls, obj: typing.Dict) -> "Contestant":
+        def parse(cls, obj: typing.Dict) -> "Contest.Contestant":
             obj.setdefault("inter_planner", "navigate_w_replanning_time")
             return cls(**obj)
 
@@ -181,7 +181,7 @@ class Contest(typing.NamedTuple):
     def config(self, index: int) -> Contestant:
         return self.contestants[index]
 
-@TaskFactory.register_module(Constants.TaskMode.TM_Module.BENCHMARK)
+
 class Mod_Benchmark(TM_Module):
     DIR = pathlib.Path(os.path.join(get_package_share_directory("arena_bringup"), "configs", "benchmark"))
     LOCK_FILE = "resume.lock"
@@ -201,7 +201,6 @@ class Mod_Benchmark(TM_Module):
     _contest_index: Contest.Index
     _suite_index: Suite.Index
     _headless: int
-    _node: Node
     _config_class: typing.Any
     _primary_node: str
     _logger_object: logging.Logger = None
@@ -229,17 +228,15 @@ class Mod_Benchmark(TM_Module):
 
     def _normalize_namespace(self, namespace: str) -> str:
         """Normalize namespace by removing extra slashes and ensuring proper format."""
-        # Remove leading/trailing slashes and collapse multiple slashes
-        namespace = "/".join(filter(None, namespace.split("/")))
-        # Ensure single leading slash for absolute namespace
-        return f"/{namespace}" if namespace else "/task_generator_node"
+        namespace = os.path.normpath(namespace)
+        return os.path.join("/", namespace) if namespace else self.node.service_namespace()
 
-    def _validate_parameters(self, node_name, param_names):
+    def _validate_parameters(self, param_names):
         logger = self._logger
-        clean_node_name = self._normalize_namespace(node_name)
-        service_name = f"{clean_node_name}/describe_parameters"
+        clean_node_name = self._primary_node
+        service_name = os.path.join(clean_node_name, "describe_parameters")
         logger.debug(f"Creating client for service: {service_name}")
-        describe_client = self._node.create_client(DescribeParameters, service_name)
+        describe_client = self.node.create_client(DescribeParameters, service_name)
         if not describe_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
             logger.warning(f"DescribeParameters service not available for {clean_node_name}")
             return []
@@ -247,7 +244,7 @@ class Mod_Benchmark(TM_Module):
         request.names = param_names
         try:
             future = describe_client.call_async(request)
-            rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
+            rclpy.spin_until_future_complete(self.node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
             if future.result():
                 valid_params = [desc.name for desc in future.result().descriptors]
                 logger.debug(f"Valid parameters for {clean_node_name}: {valid_params}")
@@ -259,34 +256,92 @@ class Mod_Benchmark(TM_Module):
             logger.warning(f"Error validating parameters for {clean_node_name}: {e}")
             return []
         finally:
-            self._node.destroy_client(describe_client)
+            self.node.destroy_client(describe_client)
 
-    def _set_node_parameters(self, node_name, suite_config):
-        logger = self._logger
-        clean_node_name = self._normalize_namespace(node_name)
+    def _set_node_parameters(self, suite_config):
+        """
+        Apply map/world, task modes, and scenario file for the current stage.
+        Only touches parameters that actually need to change.
+        Returns True on success, False on error.
+        """
+        logger   = self._logger
+        updated  = False
+
+        # Task-mode enums (robots / obstacles)
+        new_tm_r = Constants.TaskMode.TM_Robots(suite_config.tm_robots).value
+        new_tm_o = Constants.TaskMode.TM_Obstacles(suite_config.tm_obstacles).value
+
+        if self.node.conf.TaskMode.TM_ROBOTS.value != new_tm_r:
+            self.node.conf.TaskMode.TM_ROBOTS.value = new_tm_r
+            logger.info(f"[Benchmark] TM_ROBOTS → {new_tm_r}")
+            updated = True
+
+        if self.node.conf.TaskMode.TM_OBSTACLES.value != new_tm_o:
+            self.node.conf.TaskMode.TM_OBSTACLES.value = new_tm_o
+            logger.info(f"[Benchmark] TM_OBSTACLES → {new_tm_o}")
+            updated = True
+
+        # Map / world
+        if suite_config.map and self.node.conf.Arena.WORLD.value != suite_config.map:
+            self.node.conf.Arena.WORLD.value = suite_config.map
+            logger.info(f"[Benchmark] World  → {suite_config.map}")
+            updated = True
+
+        # Scenario JSON
+        scenario_file = suite_config.config.get("SCENARIO", {}).get("file")
+        if scenario_file:
+            # Declare once (ignored if already declared)
+            if not self.node.has_parameter("task.scenario.file"):
+                self.node.declare_parameter("task.scenario.file", scenario_file)
+
+            current = self.node.get_parameter("task.scenario.file").value
+            if current != scenario_file:
+                try:
+                    self.node.set_parameters([
+                        Parameter("task.scenario.file",
+                                Parameter.Type.STRING,
+                                scenario_file)
+                    ])
+                    logger.info(f"[Benchmark] Scenario file → {scenario_file}")
+                    updated = True
+                except Exception as e:
+                    logger.error(f"[Benchmark] Could not set scenario file: {e}")
+                    return False
+
+        if not updated:
+            logger.debug("[Benchmark] No parameter changes for this stage.")
+        return True
+
+        clean_node_name = self._primary_node
         logger.debug(f"Setting parameters for {clean_node_name}")
 
-        # Declare parameters to avoid "not available" warnings
-        params_to_declare = [
+        params_to_set = [
             ('tm_robots', Parameter.Type.STRING, suite_config.tm_robots.value),
             ('tm_obstacles', Parameter.Type.STRING, suite_config.tm_obstacles.value)
         ]
-        service_name = f"{clean_node_name}/set_parameters"
+
+        # Check if parameters are declared
+        # valid_params = self._validate_parameters([name for name, _, _ in params_to_set])
+        # if not all(name in valid_params for name, _, _ in params_to_set):
+        #     logger.warning(f"Parameters {', '.join(name for name, _, _ in params_to_set if name not in valid_params)} not declared on {clean_node_name}. Please declare them in task_generator_node.py.")
+        #     return False
+
+        service_name = os.path.join(clean_node_name, "set_parameters")
         logger.debug(f"Creating client for service: {service_name}")
-        set_client = self._node.create_client(SetParameters, service_name)
+        set_client = self.node.create_client(SetParameters, service_name)
         if not set_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
             logger.warning(f"SetParameters service not available for {clean_node_name}")
             return False
 
         success = True
-        for name, param_type, value in params_to_declare:
+        for name, param_type, value in params_to_set:
             for attempt in range(self.PARAM_SET_RETRIES):
                 try:
                     param = Parameter(name, param_type, value)
                     request = SetParameters.Request()
                     request.parameters = [param.to_parameter_msg()]
                     future = set_client.call_async(request)
-                    rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
+                    rclpy.spin_until_future_complete(self.node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
                     if future.result() and all(r.successful for r in future.result().results):
                         logger.info(f"Set parameter {name}={value} on {clean_node_name}")
                         break
@@ -300,38 +355,26 @@ class Mod_Benchmark(TM_Module):
                 logger.error(f"Failed to set {name} on {clean_node_name} after {self.PARAM_SET_RETRIES} attempts")
                 success = False
 
-        self._node.destroy_client(set_client)
+        self.node.destroy_client(set_client)
         return success
 
-    def __init__(self, node: Node = None, task=None, **kwargs):
+    def __init__(self, task, **kwargs):
+        super().__init__(task, **kwargs)
+
+        self.needs_reincarnation: bool = True
+
         self._runid = f"t{int(time.time())}"
-        self._node = node
-        self._task = task
-
-        if node is None:
-            if not rclpy.ok():
-                rclpy.init()
-            node_name = f'benchmark_module_{int(time.time())}'
-            self._node = Node(node_name)
-
         # Log detected task_generator_nodes
-        node_list = self._node.get_node_names_and_namespaces()
-        task_generator_nodes = [self._normalize_namespace(f"{ns}/{name}") for name, ns in node_list if name.startswith("task_generator_node")]
-        logger = self._logger
-        if len(task_generator_nodes) > 1:
-            logger.warning(f"Multiple task_generator_nodes detected: {task_generator_nodes}")
-        elif not task_generator_nodes:
-            logger.error("No task_generator_node found")
+        self._primary_node = self.node.service_namespace()
 
-        self._config_class = Configuration(ROSParamServer(f'benchmark_param_server_{int(time.time())}'))
+        # self._config_class = Configuration(ROSParamServer(f'benchmark_param_server_{int(time.time())}'))
         self._config = self._load_config()
-        self._suite = self._load_suite(suite=self._config.suite.config, config_class=self._config_class)
+        self._suite = self._load_suite(suite=self._config.suite.config, config_class=self.node.conf)
         self._contest = self._load_contest(self._config.contest.config)
         self._episode_index = -1
         self._contest_index = self._contest.min_index
         self._suite_index = self._suite.min_index
         self._headless = 1
-        self._primary_node = "/task_generator_node"
 
         os.makedirs(self.LOG_DIR, exist_ok=True)
         with open(self.LOG_DIR / f"{self._runid}.log", "w") as f:
@@ -341,53 +384,28 @@ class Mod_Benchmark(TM_Module):
 
         self._log_contest()
         self._log_suite()
-        self._reincarnate()
+        # self._reincarnate()
 
     def before_reset(self):
         self._logger.debug("Before task reset")
+        if self.needs_reincarnation:
+            self.needs_reincarnation = False
+            self._episode_index = -1
+            self.suite_index += 1
+            self._reincarnate()
 
     def after_reset(self):
         self._logger.debug(f"Episode: {self._episode_index + 1}")
         self._episode_index += 1
         episode_limit = int(self._suite.config(self._suite_index).episodes * self._config.suite.scale_episodes)
         if self._episode_index < episode_limit - 1:
-            self._reset_task()
+            # self._reset_task()
+            pass
         else:
-            self._episode_index = -1
-            self.suite_index += 1
+            self.needs_reincarnation = True
 
-    def _reset_task(self, primary_node: str = None):
-        logger = self._logger
-        primary_node = self._normalize_namespace(primary_node or self._primary_node)
-        logger.debug(f"Attempting task reset on {primary_node}")
-        service_name = f"{primary_node}/reset_task"
-        
-        # Validate service name
-        try:
-            validate_full_topic_name(service_name, is_service=True)
-        except rclpy.exceptions.InvalidServiceNameException as e:
-            logger.error(f"Invalid service name: {service_name}. Error: {str(e)}")
-            return False
-        
-        reset_task_client = self._node.create_client(EmptySrv, service_name)
-        if not reset_task_client.wait_for_service(timeout_sec=self.SERVICE_WAIT_TIMEOUT):
-            logger.warning(f"Service {service_name} not available")
-            return False
-        request = EmptySrv.Request()
-        try:
-            future = reset_task_client.call_async(request)
-            rclpy.spin_until_future_complete(self._node, future, timeout_sec=self.PARAM_SET_TIMEOUT)
-            if future.result():
-                logger.info(f"Task reset successfully on {service_name}")
-                return True
-            else:
-                logger.warning(f"Task reset failed on {service_name}")
-                return False
-        except Exception as e:
-            logger.warning(f"Reset task failed on {service_name}: {e}")
-            return False
-        finally:
-            self._node.destroy_client(reset_task_client)
+    def _reset_task(self):
+        self._TASK.reset()
 
     @property
     def _logger(self) -> logging.Logger:
@@ -426,7 +444,7 @@ class Mod_Benchmark(TM_Module):
             self._logger.info("Benchmark completed")
         else:
             self._log_contest()
-            self._reincarnate()
+            # self._reincarnate()
 
     @property
     def suite_index(self) -> Suite.Index:
@@ -440,7 +458,7 @@ class Mod_Benchmark(TM_Module):
             self.contest_index += 1
         else:
             self._log_suite()
-            self._reincarnate()
+            # self._reincarnate()
 
     @property
     def _episode(self) -> int:
@@ -461,17 +479,15 @@ class Mod_Benchmark(TM_Module):
         logger.debug("Starting reincarnation process")
         suite_config = self._suite.config(self._suite_index)
         logger.info(f"Transitioning to stage: {suite_config.name} (tm_robots={suite_config.tm_robots.value}, tm_obstacles={suite_config.tm_obstacles.value})")
-        node_list = self._node.get_node_names_and_namespaces()
-        task_generator_nodes = [self._normalize_namespace(f"{ns}/{name}") for name, ns in node_list if name.startswith("task_generator_node")]
-        logger.debug(f"Detected task_generator_nodes: {task_generator_nodes}")
         success = False
-        for tg_node in task_generator_nodes or [self._primary_node]:
-            if self._set_node_parameters(tg_node, suite_config):
-                logger.info(f"Stage setup complete for {suite_config.name} on {tg_node}")
-                self._primary_node = tg_node
-                success = True
-                break
+        selected_node = self._primary_node
+        if self._set_node_parameters(suite_config):
+            logger.info(f"Stage setup complete for {suite_config.name} on {selected_node}")
+            success = True
+        else:
+            logger.error(f"Failed to set parameters for {suite_config.name} on {selected_node}")
+
         if not success:
-            logger.error(f"Failed to set parameters for {suite_config.name} on any task_generator_node")
+            logger.error(f"Failed to set parameters for {suite_config.name} on any task_generator_node. Ensure tm_robots and tm_obstacles are declared in task_generator_node.py.")
         self._reset_task()
         self._episode = 0

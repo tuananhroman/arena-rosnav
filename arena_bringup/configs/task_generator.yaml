@@ -13,12 +13,12 @@
           models:
           - shelf
         static:
-          n: [3, 5]
+          n: [0, 0]
           models:
           - shelf
         seed: -1
       scenario:
-        file: default.json
+        file: default
       staged:
         curriculum: default.yaml
         index: 0
