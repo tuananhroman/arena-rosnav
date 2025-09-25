@@ -8,8 +8,17 @@ from arena_simulation_setup.shared import Elevator
 from arena_simulation_setup.worlds.world import WorldDescription
 
 from task_generator import NodeInterface
-from task_generator.shared import (Door, DynamicObstacle, Entity, Obstacle,
-                                   Orientation, Pose, Position, Robot, Wall)
+from task_generator.shared import (
+    Door,
+    DynamicObstacle,
+    Entity,
+    Obstacle,
+    Orientation,
+    Pose,
+    Position,
+    Robot,
+    Wall,
+)
 from task_generator.simulators.human import BaseHumanSimulator
 from task_generator.simulators.human.utils import ObstacleLayer
 from task_generator.simulators.sim import BaseSim
@@ -177,10 +186,10 @@ class EnvironmentManager(NodeInterface, _Realizer):
             layer=ObstacleLayer.WORLD,
         )
         elevators = list(world.all_elevators)
-        print(f"[DEBUG] Raw elevators from world (all zones): {elevators}")
+        self._logger.debug(f"Raw elevators from world (all zones): {elevators}")
         realized_elevators = list(map(self._realize_elevator, elevators))
         if realized_elevators:
-            print(f"[DEBUG] Realized elevators for world: {[e.name for e in realized_elevators]}")
+            self._logger.debug(f"Realized elevators for world: {[e.name for e in realized_elevators]}")
             self._simulator.spawn_elevators(realized_elevators)
 
     def spawn_dynamic_obstacles(self, setups: Collection[DynamicObstacle]):

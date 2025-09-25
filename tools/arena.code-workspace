@@ -145,7 +145,8 @@
 			"${workspaceFolder:arena-rosnav}/../../../build/launch/",
 			"${workspaceFolder:arena-rosnav}/../../../build/launch_ros/",
 			"${workspaceFolder:arena-rosnav}/.venv/lib/python3.10/site-packages/"
-		]
+		],
+		"python.analysis.typeCheckingMode": "standard"
 	},
 	"launch": {
 		"version": "0.2.0",
