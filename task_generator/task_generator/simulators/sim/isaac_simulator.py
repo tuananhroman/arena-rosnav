@@ -12,6 +12,7 @@ import attrs
 import numpy as np
 import rclpy
 import rclpy.client
+from geometry_msgs.msg import Point
 from isaacsim_msgs.msg import (
     Door,
     Elevator,
@@ -20,10 +21,9 @@ from isaacsim_msgs.msg import (
     Pedestrian,
     PedestrianGoal,
     Prim,
-    Wall,
     Scale,
+    Wall,
 )
-from geometry_msgs.msg import Point
 from isaacsim_msgs.srv import (
     DeletePrims,
     EditPrims,
@@ -38,7 +38,6 @@ from isaacsim_msgs.srv import (
     SpawnWalls,
 )
 from std_msgs.msg import String as StdString
-
 from task_generator.shared import (
     DynamicObstacle,
     ModelType,
@@ -46,8 +45,7 @@ from task_generator.shared import (
     Obstacle,
     Robot,
 )
-from task_generator.simulators.sim import NodeInterface, BaseSim
-from isaac_utils.managers.elevator_manager import elevator_manager
+from task_generator.simulators.sim import BaseSim, NodeInterface
 
 
 @attrs.define()
@@ -69,43 +67,6 @@ class _Service:
 
 
 class IsaacSimulator(BaseSim):
-    def spawn_elevators(self, elevators) -> bool:
-        print("[DEBUG] IsaacSimulator.spawn_elevators ENTRY, elevators:", elevators)
-        req = SpawnElevators.Request()
-        print(f"[DEBUG] IsaacSimulator.spawn_elevators called with: {[e.name for e in elevators]}")
-        for e in elevators:
-            print(f"[DEBUG] Elevator data: {e}")
-        for elevator in elevators:
-            try:
-                # Convert position to geometry_msgs/Point if needed
-                pos = elevator.position
-                if isinstance(pos, (list, tuple)) and len(pos) == 3:
-                    pos = Point(x=pos[0], y=pos[1], z=pos[2])
-                # Convert size to isaacsim_msgs/Scale if needed
-                size = elevator.size
-                if isinstance(size, (list, tuple)) and len(size) == 3:
-                    size = Scale(x=size[0], y=size[1], z=size[2])
-                # Convert material to string if needed
-                material = elevator.material
-                if hasattr(material, 'name'):
-                    material = str(material.name)
-                elif not isinstance(material, str):
-                    material = str(material)
-                req.elevators.append(
-                    Elevator(
-                        name=elevator.name,
-                        position=pos,
-                        size=size,
-                        height_min=elevator.height_min,
-                        height_max=elevator.height_max,
-                        material=material,
-                    )
-                )
-            except Exception as ex:
-                print(f"[ERROR] Failed to append elevator: {elevator.name}, error: {ex}")
-        res = all(self._services.SpawnElevators.client.call(req).ret)
-        print("All elevators spawned successfully." if res else "Failed to spawn one or more elevators")
-        return res
 
     _NS_PRIM = Namespace('Obstacles')
     _NS_PEDESTRIAN = Namespace('Pedestrians')
@@ -352,6 +313,35 @@ class IsaacSimulator(BaseSim):
         self._logger.info("All doors spawned successfully.")
         return res
 
+    def spawn_elevators(self, elevators) -> bool:
+        self._logger.debug(f"IsaacSimulator.spawn_elevators ENTRY, elevators: {elevators}")
+        self._logger.debug(f"IsaacSimulator.spawn_elevators called with: {[e.name for e in elevators]}")
+        for e in elevators:
+            self._logger.debug(f"Elevator data: {e}")
+
+        req = SpawnElevators.Request()
+        for elevator in elevators:
+            try:
+                pos = elevator.position
+                size = elevator.size
+                size = Scale(x=size[0], y=size[1], z=size[2])
+                req.elevators.append(
+                    Elevator(
+                        name=elevator.name,
+                        position=pos,
+                        size=size,
+                        height_min=elevator.height_min,
+                        height_max=elevator.height_max,
+                        material=Material(**elevator.material.load().asdict()),
+                    )
+                )
+            except Exception as e:
+                self._logger.error(f"Failed to append elevator: {elevator.name}, error: {e}")
+
+        res = all(self._services.SpawnElevators.client.call(req).ret)
+        self._logger.debug("All elevators spawned successfully." if res else "Failed to spawn one or more elevators")
+        return res
+
     # TODO: update
     def before_reset_task(self):
         self._delete_all_pedestrians(self._NS_PEDESTRIAN)
@@ -446,7 +436,7 @@ class IsaacSimulator(BaseSim):
         preflight = tuple(map(impl, pedestrians.pedestrians))
         results = self._services.NavigatePedestrians.client.call(req).ret
 
-        return (a and b for a, b in zip(preflight, results))
+        return tuple(a and b for a, b in zip(preflight, results))
 
     def _delete_entity(self, name: str) -> bool:
         self._logger.debug(f"Attempting to delete prim {name}")
