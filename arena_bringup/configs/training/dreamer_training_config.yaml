@@ -260,8 +260,54 @@ arena_cfg:
   
   # Task module configuration
   task:
-    tm_modules: staged  # Task module selection (curriculum stages)
-    tm_obstacles: random  # Obstacle placement strategy
-    tm_robots: random  # Robot placement strategy
+    tm_modules: staged  # Task module setup (staged for curriculum learning)
+    tm_obstacles: random  # Obstacle generation method (random placement)
+    tm_robots: random  # Robot spawning method (random positions)
+
+    staged:
+      starting_stage: 0
+      threshold_type: succ  # Metric to use: "succ" (success rate) or "rew" (reward)
+      upper_threshold: 0.9  # Performance threshold to advance to next stage
+      lower_threshold: 0.3  # Performance threshold to stay at current stage
+
+      parameter_node_template: "/task_generator_node"  # Template for task generator node name
+      timeout: 5.0  # Timeout for ROS2 parameter service calls (seconds)
+      curriculum_definition:
+        # Stage 1: No obstacles (safe start)
+        - task.random.static.n: [0, 0]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [0, 0]
+          task.random.static.models: []
+          task.random.interactive.models: []
+          task.random.dynamic.models: []
+          goal_tolerance_radius: 1.5
+          
+        # Stage 2: Few static obstacles
+        - task.random.static.n: [2, 4]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [0, 0]
+          task.random.static.models: [chair, table]
+          task.random.interactive.models: []
+          task.random.dynamic.models: []
+          goal_tolerance_radius: 1.2
+          
+        # Stage 3: More static obstacles + first dynamic
+        - task.random.static.n: [3, 5]
+          task.random.interactive.n: [0, 0]
+          task.random.dynamic.n: [1, 2]
+          task.random.static.models: [chair, table, shelf]
+          task.random.interactive.models: []
+          task.random.dynamic.models: [actor1]
+          goal_tolerance_radius: 1.0
+          
+        # Stage 4: Introduce interactive obstacles
+        - task.random.static.n: [4, 6]
+          task.random.interactive.n: [1, 2]
+          task.random.dynamic.n: [2, 3]
+          task.random.static.models: [chair, table, shelf, plant]
+          task.random.interactive.models: [door]
+          task.random.dynamic.models: [actor1]
+          goal_tolerance_radius: 0.8
   
   profiling: null  # Performance profiling settings (null to disable)
+

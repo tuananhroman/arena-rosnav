@@ -105,7 +105,7 @@ class DreamerV3Trainer(ArenaTrainer):
             n_envs=self.config.arena_cfg.general.n_envs,
             max_steps=self.config.arena_cfg.general.max_num_moves_per_eps,
             init_env_by_call=False,
-            namespace_fn=SIMULATION_NAMESPACES.TRAIN_NS,
+            namespace_fn="/task_generator_node/jackal",
             simulation_state_container=self.simulation_state_container,
             wrappers=[
                 dreamerv3.WoTruncatedFlag,
@@ -134,17 +134,32 @@ class DreamerV3Trainer(ArenaTrainer):
         """
         Implementation of the training process for DreamerV3 agent.
 
-        This method serves as a wrapper for the agent's training function,
-        passing the appropriate training and evaluation environments.
+        This method follows proper OOP design by calling self.agent.model.train()
+        and passes the StagedCfg model directly for curriculum learning.
 
         Parameters:
-            *args: Variable length argument list, not used but kept for compatibility.
-            **kwargs: Arbitrary keyword arguments, not used but kept for compatibility.
-
-        Returns:
-            None. The method directly calls the agent's train method.
+            *args: Variable length argument list (unused, for compatibility).
+            **kwargs: Arbitrary keyword arguments (unused, for compatibility).
         """
-        self.agent.train(train_envs=self.environment[0], eval_envs=self.environment[1])
+        # Extract curriculum configuration from arena_cfg
+        curriculum_config = None
+        if (hasattr(self.config, 'arena_cfg') and 
+            hasattr(self.config.arena_cfg, 'task') and 
+            hasattr(self.config.arena_cfg.task, 'staged') and
+            self.config.arena_cfg.task.tm_modules == "staged"):
+            curriculum_config = self.config.arena_cfg.task.staged
+
+        verbose = getattr(self.config.arena_cfg.general, "verbose", 0)
+
+        # Call model's train method directly - proper OOP design
+        # Pass the StagedCfg model directly instead of converting to dict
+        self.agent.model.train(
+            train_envs=self.environment[0],
+            eval_envs=self.environment[1],
+            curriculum_config=curriculum_config,
+            node=self.node,
+            verbose=verbose,
+        )
 
 
 if __name__ == "__main__":
