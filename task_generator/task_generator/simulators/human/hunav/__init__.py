@@ -1,4 +1,3 @@
-
 import enum
 import os
 import typing
@@ -14,7 +13,7 @@ from task_generator.shared import DynamicObstacle, ModelWrapper, Pose, Position
 
 @attrs.define
 class PositionH(Position):
-    h: float = attrs.field(default=0., converter=float)
+    h: float = attrs.field(default=0.0, converter=float)
 
 
 class Goals(list[Position]):
@@ -22,21 +21,30 @@ class Goals(list[Position]):
     def parse(cls, obj: dict) -> "Goals":
         waypoints = [
             Position(
-                x=waypoint.get('x', 0.),
-                y=waypoint.get('y', 0.),
-                z=waypoint.get('z', 0.),
+                x=waypoint.get("x", 0.0),
+                y=waypoint.get("y", 0.0),
+                z=waypoint.get("z", 0.0),
             )
-            for waypoint in (obj.get(wpname) for wpname in obj['goals'])
+            for waypoint in (obj.get(wpname) for wpname in obj["goals"])
             if waypoint is not None
         ]
         return cls(waypoints)
 
     def as_poses(self) -> list[geometry_msgs.msg.Pose]:
-        return [
-            Pose(p).to_msg()
-            for p
-            in self
-        ]
+        # Create Pose objects explicitly to avoid C extension type mismatch
+        poses = []
+        for p in self:
+            pose_msg = geometry_msgs.msg.Pose()
+            pose_msg.position.x = float(p.x)
+            pose_msg.position.y = float(p.y)
+            pose_msg.position.z = float(p.z)
+            # Orientation defaults to identity quaternion (0,0,0,1)
+            pose_msg.orientation.w = 1.0
+            pose_msg.orientation.x = 0.0
+            pose_msg.orientation.y = 0.0
+            pose_msg.orientation.z = 0.0
+            poses.append(pose_msg)
+        return poses
 
 
 @attrs.define()
@@ -61,24 +69,25 @@ class HunavDynamicObstacle:
         @classmethod
         def parse(cls, obj: dict) -> "HunavDynamicObstacle.Behavior":
             return cls(
-                type=obj.get('type', cls._default.type),
-                state=obj.get('state', cls._default.state),
-                configuration=obj.get(
-                    'configuration', cls._default.configuration),
-                duration=obj.get('duration', cls._default.duration),
-                once=obj.get('once', cls._default.once),
-                vel=obj.get('vel', cls._default.vel),
-                dist=obj.get('dist', cls._default.dist),
+                type=obj.get("type", cls._default.type),
+                state=obj.get("state", cls._default.state),
+                configuration=obj.get("configuration", cls._default.configuration),
+                duration=obj.get("duration", cls._default.duration),
+                once=obj.get("once", cls._default.once),
+                vel=obj.get("vel", cls._default.vel),
+                dist=obj.get("dist", cls._default.dist),
                 social_force_factor=obj.get(
-                    'social_force_factor',
-                    cls._default.social_force_factor),
+                    "social_force_factor", cls._default.social_force_factor
+                ),
                 goal_force_factor=obj.get(
-                    'goal_force_factor', cls._default.goal_force_factor),
+                    "goal_force_factor", cls._default.goal_force_factor
+                ),
                 obstacle_force_factor=obj.get(
-                    'obstacle_force_factor',
-                    cls._default.obstacle_force_factor),
+                    "obstacle_force_factor", cls._default.obstacle_force_factor
+                ),
                 other_force_factor=obj.get(
-                    'other_force_factor', cls._default.other_force_factor),
+                    "other_force_factor", cls._default.other_force_factor
+                ),
             )
 
         def to_msg(self) -> hunav_msgs.msg.AgentBehavior:
@@ -89,7 +98,9 @@ class HunavDynamicObstacle:
             behavior_msg.once = self.once
             behavior_msg.vel = self.vel
             behavior_msg.dist = self.dist
-            behavior_msg.goal_force_factor = 20.0  # hunav_obstacle.behavior.goal_force_factor
+            behavior_msg.goal_force_factor = (
+                20.0  # hunav_obstacle.behavior.goal_force_factor
+            )
             behavior_msg.obstacle_force_factor = self.obstacle_force_factor
             behavior_msg.social_force_factor = self.social_force_factor
             behavior_msg.other_force_factor = self.other_force_factor
@@ -121,58 +132,63 @@ class HunavDynamicObstacle:
     _default: typing.ClassVar["HunavDynamicObstacle"]
 
     @classmethod
-    def from_dynamic_obstacle(cls, obj: DynamicObstacle, extra: dict | None = None) -> "HunavDynamicObstacle":
+    def from_dynamic_obstacle(
+        cls, obj: DynamicObstacle, extra: dict | None = None
+    ) -> "HunavDynamicObstacle":
         if extra is None:
             extra = {}
         extra = {**obj.extra, **extra}
 
-        if 'goals' in extra:
+        if "goals" in extra:
             waypoints = Goals.parse(extra)
         else:
-            waypoints = Goals([
-                Position(
-                    x=waypoint.x,
-                    y=waypoint.y,
-                )
-                for waypoint
-                in obj.waypoints
-            ])
+            waypoints = Goals(
+                [
+                    Position(
+                        x=waypoint.x,
+                        y=waypoint.y,
+                    )
+                    for waypoint in obj.waypoints
+                ]
+            )
 
-        if 'behavior' in extra:
-            behavior = cls.Behavior.parse(extra['behavior'])
+        if "behavior" in extra:
+            behavior = cls.Behavior.parse(extra["behavior"])
         else:
             behavior = cls.Behavior._default
 
         behavior_tree: str = cls._default.behavior_tree
-        if 'behavior_tree' in extra:
-            behavior_tree = os.path.join(obj.path, extra['behavior_tree'])
+        if "behavior_tree" in extra:
+            behavior_tree = os.path.join(obj.path, extra["behavior_tree"])
 
         return cls(
             name=obj.name,
             init_pose=PositionH(
-                x=extra.get('position', {}).get('x', obj.pose.position.x),
-                y=extra.get('position', {}).get('y', obj.pose.position.y),
-                z=extra.get('position', {}).get('z', cls._default.init_pose.z),
-                h=extra.get('position', {}).get('h', cls._default.init_pose.h),
+                x=extra.get("position", {}).get("x", obj.pose.position.x),
+                y=extra.get("position", {}).get("y", obj.pose.position.y),
+                z=extra.get("position", {}).get("z", cls._default.init_pose.z),
+                h=extra.get("position", {}).get("h", cls._default.init_pose.h),
             ),
             yaw=0.0,
             model=obj.model,
             goals=waypoints,
-            velocity=extra.get('velocity', cls._default.velocity),
-            desired_velocity=extra.get('desired_velocity', cls._default.desired_velocity),
-            radius=extra.get('radius', cls._default.radius),
-            linear_vel=extra.get('linear_vel', cls._default.linear_vel),
-            angular_vel=extra.get('angular_vel', cls._default.angular_vel),
+            velocity=extra.get("velocity", cls._default.velocity),
+            desired_velocity=extra.get(
+                "desired_velocity", cls._default.desired_velocity
+            ),
+            radius=extra.get("radius", cls._default.radius),
+            linear_vel=extra.get("linear_vel", cls._default.linear_vel),
+            angular_vel=extra.get("angular_vel", cls._default.angular_vel),
             behavior=behavior,
             behavior_tree=behavior_tree,
-            cyclic_goals=extra.get('cyclic_goals', cls._default.cyclic_goals),
-            goal_radius=extra.get('goal_radius', cls._default.goal_radius),
+            cyclic_goals=extra.get("cyclic_goals", cls._default.cyclic_goals),
+            goal_radius=extra.get("goal_radius", cls._default.goal_radius),
             closest_obs=[],
             extra=extra,
-            id=extra.get('id', cls._default.id),
-            type=extra.get('type', cls._default.type),
-            skin=extra.get('skin', cls._default.skin),
-            group_id=extra.get('group_id', cls._default.group_id),
+            id=extra.get("id", cls._default.id),
+            type=extra.get("type", cls._default.type),
+            skin=extra.get("skin", cls._default.skin),
+            group_id=extra.get("group_id", cls._default.group_id),
         )
 
     def to_msg(self) -> hunav_msgs.msg.Agent:
@@ -207,7 +223,7 @@ class HunavDynamicObstacle:
             goals = [
                 (-3.133759, -4.166653, 1.250000),
                 (0.997901, -4.131655, 1.250000),
-                (-0.227549, -20.187146, 1.250000)
+                (-0.227549, -20.187146, 1.250000),
             ]
             for x, y, h in goals:
                 goal = geometry_msgs.msg.Pose()
@@ -220,36 +236,36 @@ class HunavDynamicObstacle:
     @classmethod
     def parse(cls, obj: dict, model: ModelWrapper) -> "HunavDynamicObstacle":
 
-        if 'goals' in obj:
+        if "goals" in obj:
             waypoints = Goals.parse(obj)
         else:
             waypoints = cls._default.goals
 
         return cls(
-            name=obj.get('name', cls._default.name),
-            extra=obj.get('extra', cls._default.extra),
+            name=obj.get("name", cls._default.name),
+            extra=obj.get("extra", cls._default.extra),
             model=model,
             goals=waypoints,
             init_pose=PositionH(
-                x=obj.get('init_pose', {}).get('x', cls._default.init_pose.x),
-                y=obj.get('init_pose', {}).get('y', cls._default.init_pose.y),
-                z=obj.get('init_pose', {}).get('z', cls._default.init_pose.z),
-                h=obj.get('init_pose', {}).get('h', cls._default.init_pose.h),
+                x=obj.get("init_pose", {}).get("x", cls._default.init_pose.x),
+                y=obj.get("init_pose", {}).get("y", cls._default.init_pose.y),
+                z=obj.get("init_pose", {}).get("z", cls._default.init_pose.z),
+                h=obj.get("init_pose", {}).get("h", cls._default.init_pose.h),
             ),
-            yaw=obj.get('yaw', cls._default.yaw),
+            yaw=obj.get("yaw", cls._default.yaw),
             id=obj.get("id", cls._default.id),
-            behavior=cls.Behavior.parse(obj.get('behavior', {})),
-            behavior_tree=obj.get('behavior_tree', cls._default.behavior_tree),
-            type=obj.get('type', cls._default.type),
-            skin=obj.get('skin', cls._default.skin),
-            group_id=obj.get('group_id', cls._default.group_id),
+            behavior=cls.Behavior.parse(obj.get("behavior", {})),
+            behavior_tree=obj.get("behavior_tree", cls._default.behavior_tree),
+            type=obj.get("type", cls._default.type),
+            skin=obj.get("skin", cls._default.skin),
+            group_id=obj.get("group_id", cls._default.group_id),
             velocity=None,
-            desired_velocity=obj.get('max_vel', cls._default.desired_velocity),
-            radius=obj.get('radius', cls._default.radius),
+            desired_velocity=obj.get("max_vel", cls._default.desired_velocity),
+            radius=obj.get("radius", cls._default.radius),
             linear_vel=cls._default.linear_vel,
             angular_vel=cls._default.angular_vel,
-            cyclic_goals=obj.get('cyclic_goals', cls._default.cyclic_goals),
-            goal_radius=obj.get('goal_radius', cls._default.goal_radius),
+            cyclic_goals=obj.get("cyclic_goals", cls._default.cyclic_goals),
+            goal_radius=obj.get("goal_radius", cls._default.goal_radius),
             closest_obs=[],
         )
 
@@ -259,17 +275,14 @@ def _load_config(filename: str = "default.yaml") -> "HunavDynamicObstacle":
 
     # second priority: Install space
     config_path = os.path.join(
-        get_package_share_directory("arena_bringup"),
-        "configs",
-        "hunav",
-        filename
+        get_package_share_directory("arena_bringup"), "configs", "hunav", filename
     )
 
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             agent_config = yaml.safe_load(f)
 
-        return HunavDynamicObstacle.parse(agent_config, ModelWrapper(''))
+        return HunavDynamicObstacle.parse(agent_config, ModelWrapper(""))
 
     except Exception as e:
         raise RuntimeError(f"Error loading config from {config_path}") from e
@@ -281,19 +294,17 @@ HunavDynamicObstacle.Behavior._default = HunavDynamicObstacle.Behavior(
     configuration=0,
     duration=0,
     once=False,
-    vel=0.,
-    dist=0.,
-    social_force_factor=0.,
-    goal_force_factor=0.,
-    obstacle_force_factor=0.,
-    other_force_factor=0.,
-
-
+    vel=0.0,
+    dist=0.0,
+    social_force_factor=0.0,
+    goal_force_factor=0.0,
+    obstacle_force_factor=0.0,
+    other_force_factor=0.0,
 )
 
 HunavDynamicObstacle._default = HunavDynamicObstacle(
     init_pose=PositionH(x=0, y=0),
-    name='',
+    name="",
     model=ModelWrapper.EMPTY(),
     extra={},
     goals=Goals(),
@@ -301,16 +312,16 @@ HunavDynamicObstacle._default = HunavDynamicObstacle(
     type=1,
     skin=0,
     group_id=0,
-    yaw=0.,
+    yaw=0.0,
     velocity=None,
-    desired_velocity=0.,
-    radius=0.,
-    linear_vel=0.,
-    angular_vel=0.,
+    desired_velocity=0.0,
+    radius=0.0,
+    linear_vel=0.0,
+    angular_vel=0.0,
     behavior=HunavDynamicObstacle.Behavior._default,
-    behavior_tree='default.xml',
+    behavior_tree="default.xml",
     cyclic_goals=False,
-    goal_radius=0.,
+    goal_radius=0.0,
     closest_obs=[],
 )
 
@@ -321,20 +332,20 @@ HunavDynamicObstacle.Behavior._default = HunavDynamicObstacle._default.behavior
 
 # Animation configuration (from WorldGenerator)
 SKIN_TYPES: dict[int, str] = {
-    0: 'elegant_man.dae',
-    1: 'casual_man.dae',
-    2: 'elegant_woman.dae',
-    3: 'regular_man.dae',
-    4: 'worker_man.dae',
-    5: 'walk.dae'
+    0: "elegant_man.dae",
+    1: "casual_man.dae",
+    2: "elegant_woman.dae",
+    3: "regular_man.dae",
+    4: "worker_man.dae",
+    5: "walk.dae",
 }
 
 
 class ANIMATION_TYPES(str, enum.Enum):
-    WALK = '07_01-walk.bvh',
-    WALK_FORWARD = '69_02_walk_forward.bvh',
-    NORMAL_WAIT = '137_28-normal_wait.bvh',
-    WALK_CHILDISH = '142_01-walk_childist.bvh',
-    SLOW_WALK = '07_04-slow_walk.bvh',
-    WALK_SCARED = '142_17-walk_scared.bvh',
-    WALK_ANGRY = '17_01-walk_with_anger.bvh'
+    WALK = ("07_01-walk.bvh",)
+    WALK_FORWARD = ("69_02_walk_forward.bvh",)
+    NORMAL_WAIT = ("137_28-normal_wait.bvh",)
+    WALK_CHILDISH = ("142_01-walk_childist.bvh",)
+    SLOW_WALK = ("07_04-slow_walk.bvh",)
+    WALK_SCARED = ("142_17-walk_scared.bvh",)
+    WALK_ANGRY = "17_01-walk_with_anger.bvh"
