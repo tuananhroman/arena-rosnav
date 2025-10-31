@@ -224,17 +224,17 @@ class IsaacSimulator(BaseSim):
             segments, obstacles = wall.assets()
 
             for segment in segments:
+                end = segment.end.to_msg()
+                end.z += segment.height
                 try:
                     wall_name = self.node._environment_manager.realize(f"wall_{next(self.wall_counter)}")
                     walls_req.walls.append(
                         Wall(
                             name=self._NS_WALL(wall_name),
-                            start=segment.start,
-                            end=segment.end,
-                            height=segment.height,
-                            width=segment.width,
+                            start=segment.start.to_msg(),
+                            end=end,
                             material=Material(**segment.material.load().asdict()),
-                            z_offset=segment.start.z
+                            thickness=segment.width,
                         )
                     )
 
@@ -270,14 +270,13 @@ class IsaacSimulator(BaseSim):
 
         for floor in floors:
             try:
-                pos = [floor.pos.x, floor.pos.y]
                 i = next(self.floor_counter)
                 req.floors.append(
                     Floor(
                         name=self._NS_FLOOR(f"floor_{i}"),
                         x_length=floor.x_length,
                         y_length=floor.y_length,
-                        pos=pos,
+                        pos=floor.pos.to_msg(),
                         material=Material(**floor.material.load().asdict()),
                     )
                 )
@@ -295,13 +294,15 @@ class IsaacSimulator(BaseSim):
         req = SpawnDoors.Request()
         for door in doors:
             try:
+                end = door.end.to_msg()
+                end.z += door.height
                 req.doors.append(
                     Door(
                         name=self._NS_DOOR(door.name),
-                        start=[door.start.x, door.start.y],
-                        end=[door.end.x, door.end.y],
-                        height=door.height,
+                        start=door.start.to_msg(),
+                        end=end,
                         material=Material(**door.material.load().asdict()),
+                        thickness=0.1,
                         kind=door.kind,
                     )
                 )
